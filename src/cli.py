@@ -7,13 +7,13 @@ import host
 class Parser:
     def __init__(self) -> None:
         self._parser = argparse.ArgumentParser(
-            usage = f"%(prog)s -p PORT (-l HOST:PORT [HOST:PORT ...] | -f HOSTFILE)"
+            epilog = "HOST must be IPv4:PORT or [IPv6]:PORT or HOSTNAME:PORT",
         )
 
         self._parser.add_argument("-p", "--port",
             required = True,
             type = host.Port.from_str,
-            help = "Port number where this server will listen for TCP connections",
+            help = "Port where this server will listen for TCP connections",
         )
 
         group = self._parser.add_mutually_exclusive_group(required = True)
@@ -21,14 +21,16 @@ class Parser:
         group.add_argument("-l", "--hostlist",
             nargs = '+',
             dest = "hosts",
+            metavar = "HOST",
             type = host.Host.from_hostport,
-            help = "List of HOST:PORT locations of the other paxos servers",
+            help = "List of HOST locations of the other paxos servers",
         )
 
         group.add_argument("-f", "--hostfile",
             dest = "hosts",
+            metavar = "HOSTFILE",
             type = host.from_hostfile,
-            help = "Path to text file containing a HOST:PORT list separated by white spaces",
+            help = "Path to text file with a white space separeted HOST list",
         )
 
 
