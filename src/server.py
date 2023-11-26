@@ -6,16 +6,16 @@ from uuid import UUID, uuid4
 import cli
 import connection
 from port import Port
+from message import Message
 from host import Host, from_hostfile
 
 
 async def main():
     logging.root.level = logging.DEBUG
-
     uuid, port, hosts, majority = parse()
 
     async with await connection.Manager.connect(hosts, [1, 2]) as connections:
-        print(len(connections))
+        await connections.broadcast(Message(b"Hello, world!").to_bytes())
 
 
 def parse() -> tuple[UUID, Port, list[Host], int]:
