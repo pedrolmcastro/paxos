@@ -1,13 +1,18 @@
+import uuid
 import asyncio
 import logging
+import threading
+from typing import Callable
 
 from host import Host
+
 
 
 class Connection:
     def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         self._reader = reader
         self._writer = writer
+        self._id = uuid.uuid4()
 
     @classmethod
     async def connect(cls, host: Host, timeouts: list[float]) -> "Connection":
@@ -39,31 +44,49 @@ class Connection:
         await self.close()
 
 
+    def __hash__(self) -> int:
+        return self._id.int
+
+
     async def send(self, data: bytes) -> None:
         self._writer.write(data)
         await self._writer.drain()
 
 
 class Manager:
-    def __init__(self, connections: list[Connection]) -> None:
+    def __init__(
+        self,
+        connections: set[Connection],
+        ondisconnect: Callable[[int], None] | None = None,
+    ) -> None:
+        self._lock = threading.Lock()
         self._connections = connections
+        self._ondisconnect = ondisconnect
 
     @classmethod
-    async def connect(cls, hosts: list[Host], timeouts: list[float]) -> "Manager":
+    async def connect(
+        cls,
+        hosts: list[Host],
+        timeouts: list[float],
+        ondisconnect: Callable[[int], None] | None = None,
+    ) -> "Manager":
         tasks = [Connection.connect(host, timeouts) for host in hosts]
-        connections: list[Connection] = []
+        connections: set[Connection] = set()
 
         for coroutine in asyncio.as_completed(tasks):
             try:
-                connections.append(await coroutine)
+                connections.add(await coroutine)
             except Exception as exception:
                 logging.warning(str(exception))
 
-        return cls(connections)
+        return cls(connections, ondisconnect)
 
 
     async def close(self) -> None:
         await asyncio.gather(*(connection.close() for connection in self._connections))
+
+        with self._lock:
+            self._connections = set()
 
 
     async def __aenter__(self) -> "Manager":
@@ -74,8 +97,24 @@ class Manager:
 
 
     def __len__(self) -> int:
-        return len(self._connections)
+        with self._lock:
+            return len(self._connections)
+
+
+    def _disconnect(self, connection: Connection):
+        with self._lock:
+            self._connections.discard(connection)
+
+            if self._ondisconnect is not None:
+                self._ondisconnect(len(self._connections))
 
 
     async def broadcast(self, data: bytes) -> None:
-        await asyncio.gather(*(connection.send(data) for connection in self._connections))
+        async def task(connection: Connection, data: bytes):
+            try:
+                await connection.send(data)
+            except Exception as exception:
+                logging.warning(f"Failed to send message: {exception}")
+                self._disconnect(connection)
+
+        await asyncio.gather(*(task(connection, data) for connection in self._connections))
