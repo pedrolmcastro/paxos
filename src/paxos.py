@@ -22,7 +22,7 @@ class Proposer:
         message = {'type': 'prepare', 'proposal_number': self.proposal_number}
         self.messenger.send(message, self.messenger.nodes)
         promises = []
-        while len(promises) < len(self.messenger.nodes) // 2 + 1:
+        while len(promises) < len(self.messenger.nodes):
             message = self.messenger.receive()
             if message['type'] == 'promise':
                 promises.append(message)
