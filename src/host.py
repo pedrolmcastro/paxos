@@ -79,7 +79,7 @@ class Host:
                 proto = socket.IPPROTO_TCP
             )
         except socket.gaierror:
-            raise ValueError(f"failed to get address info for '{self}'")
+            raise ValueError(f"failed to get address info: '{self}'")
 
         object.__setattr__(self, "info", [Address(address) for address in info])
 
