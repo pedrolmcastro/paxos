@@ -1,12 +1,13 @@
-
 class Messenger:
     def __init__(self, nodes):
         self.nodes = nodes
 
     def send(self, message, to):
+        #BROADCASTS MESSAGE
         pass
 
     def receive(self):
+        #RECIEVES MESSAGE
         pass
 
 
