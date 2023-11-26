@@ -73,11 +73,7 @@ class Host:
 
     def __post_init__(self) -> None:
         try:
-            info = socket.getaddrinfo(
-                self.host,
-                self.port.number,
-                proto = socket.IPPROTO_TCP
-            )
+            info = socket.getaddrinfo(self.host, self.port.number, proto = socket.IPPROTO_TCP)
         except socket.gaierror:
             raise ValueError(f"failed to get address info: '{self}'")
 

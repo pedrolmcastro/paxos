@@ -1,17 +1,24 @@
 import sys
+import asyncio
 import logging
 from uuid import UUID, uuid4
 
 import cli
+import connection
 from port import Port
 from host import Host, from_hostfile
 
 
-def main():
+async def main():
+    logging.root.level = logging.DEBUG
+
     uuid, port, hosts, majority = parse()
 
+    async with await connection.Manager.connect(hosts, [1, 2]) as connections:
+        print(len(connections))
 
-def parse() -> (UUID, Port, list[Host], int):
+
+def parse() -> tuple[UUID, Port, list[Host], int]:
     # Parse CLI inputs
     parser = cli.Parser.server
     parsed = parser.parse_args(sys.argv[1:])
@@ -44,5 +51,4 @@ def parse() -> (UUID, Port, list[Host], int):
 
 
 if __name__ == "__main__":
-    logging.root.level = logging.DEBUG
-    main()
+    asyncio.run(main())
