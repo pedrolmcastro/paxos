@@ -1,22 +1,31 @@
-import dataclasses
-
-
-@dataclasses.dataclass(frozen = True)
 class Port:
-    number: int
+    """Wrapper to represent a port with a valid number"""
 
 
-    def __post_init__(self) -> None:
-        if self.number <= 0 or self.number > 65535:
-            raise ValueError(f"port out of range [1, 65535]: '{self.number}'")
+    MIN = 1
+    MAX = 65535
+
+
+    def __init__(self, number: int) -> None:
+        if number < self.MIN or number > self.MAX:
+            raise ValueError(
+                f"Port out of range [{self.MIN}, {self.MAX}]: '{number}'"
+            )
+
+        self._number = number
 
     @classmethod
     def from_str(cls, number: str) -> "Port":
         if not number.isdigit():
-            raise ValueError(f"invalid unsigned int: '{number}'")
+            raise ValueError(f"Invalid unsigned int: '{number}'")
 
         return cls(int(number))
 
 
+    @property
+    def number(self):
+        return self._number
+
+
     def __str__(self) -> str:
-        return str(self.number)
+        return str(self._number)

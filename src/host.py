@@ -46,7 +46,7 @@ class Address:
         return Port(self.sockaddr[1])
 
 
-class Regex:
+class _Regex:
     """Regex to match IPv4:PORT or [IPv6]:PORT or HOSTNAME:PORT"""
 
 
@@ -66,6 +66,9 @@ class Regex:
 
 @dataclasses.dataclass(frozen = True)
 class Host:
+    """Wrapper to represent a host with valid addressess"""
+
+
     host: str
     port: Port
     info: list[Address] = dataclasses.field(init = False)
@@ -73,18 +76,22 @@ class Host:
 
     def __post_init__(self) -> None:
         try:
-            info = socket.getaddrinfo(self.host, self.port.number, proto = socket.IPPROTO_TCP)
+            info = socket.getaddrinfo(
+                self.host,
+                self.port.number,
+                proto = socket.IPPROTO_TCP
+            )
         except socket.gaierror:
-            raise ValueError(f"failed to get address info: '{self}'")
+            raise ValueError(f"Failed to get address information: '{self}'")
 
         object.__setattr__(self, "info", [Address(address) for address in info])
 
     @classmethod
     def from_hostport(cls, hostport: str) -> "Host":
-        matched = Regex.match(hostport)
+        matched = _Regex.match(hostport)
 
         if matched is None:
-            raise ValueError(f"invalid hostport: '{hostport}'")
+            raise ValueError(f"Invalid hostport: '{hostport}'")
 
         host, port = matched.group(1, 2)
 
@@ -94,15 +101,16 @@ class Host:
         return cls(host, Port.from_str(port))
 
 
+    @classmethod
+    def parse_hostfile(cls, filepath: pathlib.Path) -> list["Host"]:
+        if not filepath.is_file():
+            raise ValueError(f"Invalid text file: '{filepath}'")
+
+        with filepath.open() as hostfile:
+            hostports = hostfile.read().strip().split()
+
+        return [cls.from_hostport(hostport) for hostport in hostports]
+
+
     def __str__(self) -> str:
         return f"{self.host}:{self.port}"
-
-
-def from_hostfile(filepath: pathlib.Path) -> list[Host]:
-    if not filepath.is_file():
-        raise ValueError(f"invalid text file: '{filepath}'")
-
-    with filepath.open() as hostfile:
-        hostports = hostfile.read().strip().split()
-
-    return [Host.from_hostport(hostport) for hostport in hostports]

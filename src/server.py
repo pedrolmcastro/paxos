@@ -1,40 +1,59 @@
 import sys
+import uuid
+import typing
 import asyncio
 import logging
-from typing import NoReturn
-from uuid import UUID, uuid4
 
-import cli
-import connection
+from host import Host
 from port import Port
-from message import Message
-from host import Host, from_hostfile
+from cli import Parser
+from connections import Connections
 
 
 async def main():
     logging.root.level = logging.DEBUG
-    uuid, port, hosts, majority = parse()
+    uid, port, hosts, majority = parse()
 
 
-    def ondisconnect(length: int) -> NoReturn:
+    # This must be defined early to be accessable from the closures
+    connections: Connections | None = None
+
+    async def on_disconnect(length: int):
         if length < majority:
-            error("Lost connection to the majority of nodes")
+            await typing.cast(Connections, connections).close()
+            error("Lost connection to the majority of the servers")
+
+    async def serve(
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter
+    ) -> None:
+        pass
 
 
-    async with await connection.Manager.connect(hosts, [1, 2], ondisconnect) as connections:
-        if len(connections) < majority:
-            error("Failed to connect to the majority of nodes")
-
-        while True:
-            await asyncio.sleep(5)
-            await connections.broadcast(Message(b"Hello, World!\n").payload)
+    # try:
+    #     server = await asyncio.start_server(serve, "localhost", port)
+    # except Exception as exception:
+    #     error(f"Failed to start server: {exception}")
 
 
+    connections = await Connections.connect(hosts, [1, 2, 5], on_disconnect)
 
-def parse() -> tuple[UUID, Port, list[Host], int]:
+    if len(connections) < majority:
+        await connections.close()
+        error("Failed to connect to the majority of the servers")
+
+
+    # await server.serve_forever()
+
+
+    for _ in range(5):
+        await asyncio.sleep(5)
+        await connections.broadcast(b"Hello, world!\n")
+
+
+def parse() -> tuple[uuid.UUID, Port, list[Host], int]:
     # Parse CLI inputs
-    parser = cli.Parser.server
-    parsed = parser.parse_args(sys.argv[1:])
+    parsed = Parser.server.parse_args(sys.argv[1:])
 
     logging.debug(f"Parsed port: {parsed.port}")
     logging.debug(f"Parsed hostfile: {parsed.hostfile}")
@@ -42,9 +61,9 @@ def parse() -> tuple[UUID, Port, list[Host], int]:
 
     # Parse hostfile
     try:
-        hosts = from_hostfile(parsed.hostfile)
+        hosts = Host.parse_hostfile(parsed.hostfile)
     except Exception as exception:
-        parser.error(str(exception))
+        Parser.server.error(str(exception))
 
     logging.debug(f"Parsed host list: [{', '.join(map(str, hosts))}]")
 
@@ -54,16 +73,16 @@ def parse() -> tuple[UUID, Port, list[Host], int]:
     logging.debug(f"Calculated majority: {majority}")
 
 
-    # Generate the UUID
-    uuid = uuid4()
-    logging.debug(f"Generated UUID: {uuid}")
+    # Generate the UID
+    uid = uuid.uuid4()
+    logging.debug(f"Generated UID: {uid}")
 
 
     logging.info("Parsing successfully concluded")
-    return uuid, parsed.port, hosts, majority
+    return uid, parsed.port, hosts, majority
 
 
-def error(message: str, code = 1) -> NoReturn:
+def error(message: str, code = 1) -> typing.NoReturn:
     logging.error(message)
     sys.exit(code)
 

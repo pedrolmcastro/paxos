@@ -1,35 +1,54 @@
 import uuid
+import typing
 import asyncio
 import logging
-import threading
-from typing import Callable
 
 from host import Host
 
 
-
 class Connection:
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        self._reader = reader
+    """Wrapper for asyncio.StreamWriter to manage a single connection"""
+
+
+    def __init__(self, writer: asyncio.StreamWriter) -> None:
         self._writer = writer
+
+        # Random ID to make Connection hashable and usable in a set
         self._id = uuid.uuid4()
 
     @classmethod
-    async def connect(cls, host: Host, timeouts: list[float]) -> "Connection":
+    async def connect(
+        cls,
+        host: Host,
+        timeouts: typing.Iterable[float]
+    ) -> "Connection":
         address = host.info[0]
         fails = 0
 
         for timeout in timeouts:
-            await asyncio.sleep(timeout)
-
             try:
-                reader, writer = await asyncio.open_connection(address.address, address.port.number)
-                return cls(reader, writer)
+                _, writer = await asyncio.open_connection(
+                    address.address,
+                    address.port.number,
+                )
+
+                return cls(writer)
             except Exception:
                 fails += 1
-                logging.warning(f"Failed to connect to {host} {fails} time(s)")
 
-        raise ConnectionError(f"Failed to connect to {host} after {fails} attempts")
+                logging.warning(
+                    f"Failed to connect to '{host}': {fails} time(s)"
+                )
+
+            await asyncio.sleep(timeout)
+
+        # If this fails the exception raised will not be caught
+        _, writer = await asyncio.open_connection(
+            address.address,
+            address.port.number,
+        )
+
+        return cls(writer)
 
 
     async def close(self) -> None:
@@ -40,7 +59,7 @@ class Connection:
     async def __aenter__(self) -> "Connection":
         return self
 
-    async def __aexit__(self, typ, value, traceback) -> None:
+    async def __aexit__(self, type, value, traceback) -> None:
         await self.close()
 
 
@@ -51,70 +70,3 @@ class Connection:
     async def send(self, data: bytes) -> None:
         self._writer.write(data)
         await self._writer.drain()
-
-
-class Manager:
-    def __init__(
-        self,
-        connections: set[Connection],
-        ondisconnect: Callable[[int], None] | None = None,
-    ) -> None:
-        self._lock = threading.Lock()
-        self._connections = connections
-        self._ondisconnect = ondisconnect
-
-    @classmethod
-    async def connect(
-        cls,
-        hosts: list[Host],
-        timeouts: list[float],
-        ondisconnect: Callable[[int], None] | None = None,
-    ) -> "Manager":
-        tasks = [Connection.connect(host, timeouts) for host in hosts]
-        connections: set[Connection] = set()
-
-        for coroutine in asyncio.as_completed(tasks):
-            try:
-                connections.add(await coroutine)
-            except Exception as exception:
-                logging.warning(str(exception))
-
-        return cls(connections, ondisconnect)
-
-
-    async def close(self) -> None:
-        await asyncio.gather(*(connection.close() for connection in self._connections))
-
-        with self._lock:
-            self._connections = set()
-
-
-    async def __aenter__(self) -> "Manager":
-        return self
-
-    async def __aexit__(self, typ, value, traceback) -> None:
-        await self.close()
-
-
-    def __len__(self) -> int:
-        with self._lock:
-            return len(self._connections)
-
-
-    def _disconnect(self, connection: Connection):
-        with self._lock:
-            self._connections.discard(connection)
-
-            if self._ondisconnect is not None:
-                self._ondisconnect(len(self._connections))
-
-
-    async def broadcast(self, data: bytes) -> None:
-        async def task(connection: Connection, data: bytes):
-            try:
-                await connection.send(data)
-            except Exception as exception:
-                logging.warning(f"Failed to send message: {exception}")
-                self._disconnect(connection)
-
-        await asyncio.gather(*(task(connection, data) for connection in self._connections))

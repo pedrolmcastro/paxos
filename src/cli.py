@@ -1,10 +1,13 @@
 import pathlib
 import argparse
 
-import port
+from port import Port
 
 
 class Parser:
+    """Namespace to hold the CLI parser objects"""
+    
+
     # Server parser
     server = argparse.ArgumentParser(
         epilog = "HOST must be IPv4:PORT or [IPv6]:PORT or HOSTNAME:PORT",
@@ -12,7 +15,7 @@ class Parser:
 
     server.add_argument("-p", "--port",
         required = True,
-        type = port.Port.from_str,
+        type = Port.from_str,
         help = "Port where this server will listen for TCP connections",
     )
 
