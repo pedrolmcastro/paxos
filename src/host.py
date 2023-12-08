@@ -3,19 +3,44 @@ import socket
 import pathlib
 import dataclasses
 
-from port import Port
+
+class Port:
+    """Wrapper to represent a port with a valid number"""
+
+    MIN = 1
+    MAX = 65535
+
+    def __init__(self, number: int) -> None:
+        if number < self.MIN or number > self.MAX:
+            raise ValueError(
+                f"Port out of range [{self.MIN}, {self.MAX}]: '{number}'"
+            )
+
+        self._number = number
+
+    @classmethod
+    def from_str(cls, number: str) -> "Port":
+        if not number.isdigit():
+            raise ValueError(f"Invalid unsigned int: '{number}'")
+
+        return cls(int(number))
+
+    @property
+    def number(self):
+        return self._number
+
+    def __str__(self) -> str:
+        return str(self._number)
 
 
 @dataclasses.dataclass(frozen = True)
 class Address:
     """Object-like representation of the tuple returned by socket.getaddrinfo"""
 
-
     Sockaddr = tuple[str, int] | tuple[str, int, int, int]
     Data = tuple[socket.AddressFamily, socket.SocketKind, int, str, Sockaddr]
 
     data: Data
-
 
     @property
     def family(self) -> socket.AddressFamily:
@@ -49,7 +74,6 @@ class Address:
 class _Regex:
     """Regex to match IPv4:PORT or [IPv6]:PORT or HOSTNAME:PORT"""
 
-
     PORT = "\d+"
 
     IPV4 = "(?:\d{1,3}\.){3}\d{1,3}"
@@ -57,7 +81,6 @@ class _Regex:
     HOSTNAME = "[-a-zA-Z0-9.]+"
 
     PATTERN = re.compile(f"({IPV4}|{IPV6}|{HOSTNAME}):({PORT})")
-
 
     @classmethod
     def match(cls, hostport: str) -> re.Match[str] | None:
@@ -68,11 +91,9 @@ class _Regex:
 class Host:
     """Wrapper to represent a host with valid addressess"""
 
-
     host: str
     port: Port
     info: list[Address] = dataclasses.field(init = False)
-
 
     def __post_init__(self) -> None:
         try:
@@ -100,17 +121,19 @@ class Host:
 
         return cls(host, Port.from_str(port))
 
+    def __str__(self) -> str:
+        return f"{self.host}:{self.port}"
 
-    @classmethod
-    def parse_hostfile(cls, filepath: pathlib.Path) -> list["Host"]:
+
+class Hostfile:
+    """Namespace for functionalities related to the hostfile"""
+
+    @staticmethod
+    def parse(filepath: pathlib.Path) -> list[Host]:
         if not filepath.is_file():
             raise ValueError(f"Invalid text file: '{filepath}'")
 
         with filepath.open() as hostfile:
             hostports = hostfile.read().strip().split()
 
-        return [cls.from_hostport(hostport) for hostport in hostports]
-
-
-    def __str__(self) -> str:
-        return f"{self.host}:{self.port}"
+        return [Host.from_hostport(hostport) for hostport in hostports]

@@ -4,12 +4,11 @@ import typing
 import asyncio
 import logging
 
-from host import Host
-from port import Port
 from cli import Parser
 from util import Error
 from message import Message
 from connections import Connections
+from host import Host, Hostfile, Port
 
 
 async def main():
@@ -62,7 +61,7 @@ def parse() -> tuple[uuid.UUID, Port, list[Host], int]:
 
     # Parse hostfile
     try:
-        hosts = Host.parse_hostfile(parsed.hostfile)
+        hosts = Hostfile.parse(parsed.hostfile)
     except Exception as exception:
         Error.exit(str(exception))
 

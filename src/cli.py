@@ -1,12 +1,11 @@
 import pathlib
 import argparse
 
-from port import Port
+from host import Port
 
 
 class Parser:
     """Namespace to hold the CLI parser objects"""
-    
 
     # Server parser
     server = argparse.ArgumentParser(
@@ -24,7 +23,6 @@ class Parser:
         type = pathlib.Path,
         help = "Path to text file with a white space separeted HOST list",
     )
-
 
     # Client parser
     client = argparse.ArgumentParser()
