@@ -53,7 +53,7 @@ async def main():
 
 def parse() -> tuple[uuid.UUID, Port, list[Host], int]:
     # Parse CLI inputs
-    parsed = Parser.server.parse_args(sys.argv[1:])
+    parsed = Parser().server.parse_args(sys.argv[1:])
 
     logging.debug(f"Port: {parsed.port}")
     logging.debug(f"Hostfile: {parsed.hostfile}")
