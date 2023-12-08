@@ -10,7 +10,6 @@ from security import Authn
 class Message:
     """Namespace for functionalities related to network messages"""
 
-
     @dataclasses.dataclass(frozen = True)
     class Ack:
         pass
@@ -70,7 +69,6 @@ class Message:
         PROMISE  = enum.auto()
         ACCEPT   = enum.auto()
         ACCEPTED = enum.auto()
-
 
         @classmethod
         def from_type(cls, type: type["Message.Any"]) -> "Message._Type":
