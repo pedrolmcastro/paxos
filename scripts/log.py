@@ -23,14 +23,14 @@ async def main():
 async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     while True:
         try:
-            read = await reader.readexactly(1)
+            read = await reader.read(1024)
         except Exception:
             return
 
-        char = read.decode()
+        if not read:
+            return
 
-        if char.isprintable() or char == '\n':
-            print(char, end = "", flush = True)
+        print(read)
 
 
 def error(message: str, code = 1):
