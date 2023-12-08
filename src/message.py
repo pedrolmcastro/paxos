@@ -8,7 +8,7 @@ from security import Authn
 
 
 class Message:
-    """Namespace for functionality related to network messages"""
+    """Namespace for functionalities related to network messages"""
 
 
     @dataclasses.dataclass(frozen = True)

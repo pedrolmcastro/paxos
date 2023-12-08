@@ -5,8 +5,7 @@ import threading
 
 
 class Error:
-    """Namespace for functionality related to runtime erros"""
-
+    """Namespace for functionalities related to runtime erros"""
 
     @staticmethod
     def exit(message: str, code = 1) -> typing.NoReturn:
@@ -15,13 +14,11 @@ class Error:
 
 
 class Singleton(type):
-    """Metaclass to define thread-safe singletons"""
     # From https://refactoring.guru/design-patterns/singleton/python/example#example-1
-
+    """Metaclass to define thread-safe singletons"""
 
     _lock = threading.Lock()
     _instances: dict["Singleton", typing.Any] = {}
-
 
     def __call__(self, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
         with self._lock:

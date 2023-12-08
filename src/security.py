@@ -10,7 +10,6 @@ from util import Error, Singleton
 class Authn:
     hash: str = ""
 
-
     def __post_init__(self):
         if not self.hash:
             object.__setattr__(self, "hash", Security().hash(self))
@@ -18,7 +17,6 @@ class Authn:
 
 class Security(metaclass = Singleton):
     """Singleton class to manage security functionalities"""
-
 
     def __init__(self) -> None:
         self._VARIABLE = "SECRET"
@@ -29,11 +27,9 @@ class Security(metaclass = Singleton):
 
         self._secret = secret
 
-
     @property
     def secret(self) -> str:
         return self._secret
-
 
     def _encode(self, value: typing.Any) -> bytes:
         match value:
@@ -47,7 +43,6 @@ class Security(metaclass = Singleton):
                 return value
 
         raise ValueError(f"Unable to encode type: '{type(value)}'")
-
 
     def hash(self, authn: Authn) -> str:
         items = dataclasses.asdict(authn).items()
