@@ -124,19 +124,15 @@ class Host:
 
         return cls(host, Port.from_str(port))
 
-    def __str__(self) -> str:
-        return f"{self.host}:{self.port}"
-
-
-class Hostfile:
-    """Namespace for functionalities related to the hostfile"""
-
-    @staticmethod
-    def parse(filepath: pathlib.Path) -> list[Host]:
+    @classmethod
+    def from_hostfile(cls, filepath: pathlib.Path) -> list["Host"]:
         if not filepath.is_file():
             raise ValueError(f"Invalid text file: '{filepath}'")
 
         with filepath.open() as hostfile:
             hostports = hostfile.read().strip().split()
 
-        return [Host.from_hostport(hostport) for hostport in hostports]
+        return [cls.from_hostport(hostport) for hostport in hostports]
+
+    def __str__(self) -> str:
+        return f"{self.host}:{self.port}"

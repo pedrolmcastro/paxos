@@ -4,66 +4,71 @@ import logging
 import pathlib
 import dataclasses
 
-from cli import Parser
-from util import Error
-from message import Message
-from connection import Connection
-from host import Host, Hostfile, Port
-from security import Security, Authenticated
+import cli
+import host
+import error
+import message
+import security
+import connection
 
 
 @dataclasses.dataclass(frozen = True)
-class Info:
-    port: Port
+class Data:
     secret: str
     majority: int
     uid: uuid.UUID
-    hosts: list[Host]
+    port: host.Port
     hostfile: pathlib.Path
+    hosts: list[host.Host]
 
 
-def onreceive(message: Message.Any) -> None:
-    if isinstance(message, Authenticated):
-        print(f"Authenticated: {Security().authenticate(message)}")
-
-    print(message)
+def on_receive(uid: uuid.UUID, received: message.Message) -> None:
+    print(f"Received from: '{uid}'")
 
 
 async def main() -> None:
     logging.root.level = logging.DEBUG
-    info = parse()
+    data = parse()
 
-    address = info.hosts[0].addresses[0]
-    reader, writer = await asyncio.open_connection(address.address, address.port.number)
+    async with connection.Map() as connections:
+        connections.on_receive(on_receive)
 
-    async with Connection() as connection:
-        connection.reader = reader
-        connection.writer = writer
+        async def handshake(
+            reader: asyncio.StreamReader,
+            writer: asyncio.StreamWriter
+        ) -> None:
+            uid = uuid.uuid4()
+            print(f"Handshake with: '{uid}'")
 
-        connection.onreceive(onreceive)
+            connections[uid] = connection.Connection()
+            await connections[uid].set_reader(reader, associated = writer)
+            await connections[uid].set_writer(writer)
 
-        message = Message.Accept("Hello, world", 1)
-        await connection.send(message)
+        await connection.connectall(data.hosts, [0.1, 1, 2, 5], handshake)
 
-        await asyncio.sleep(0.5)
+        for _ in range(3):
+            for uid in connections:
+                await connections.send(uid, message.Denied(str(uid)))
+
+            await asyncio.sleep(5)
 
 
-def parse() -> Info:
-    parsed = Parser().server.parse_args()
+def parse() -> Data:
+    parsed = cli.Parser().server.parse_args()
     logging.debug(f"Selected port: {parsed.port}")
     logging.debug(f"Hostfile path: {parsed.hostfile}")
 
     try:
-        hosts = Hostfile.parse(parsed.hostfile)
+        hosts = host.Host.from_hostfile(parsed.hostfile)
     except Exception as exception:
-        Error.exit(str(exception))
+        error.exit(str(exception))
 
     logging.debug(f"Hosts: [{', '.join(map(str, hosts))}]")
 
     uid = uuid.uuid4()
     logging.debug(f"Generated UID: {uid}")
 
-    secret = Security().secret
+    secret = security.Context().secret
     logging.debug(f"Detected secret: {'*' * len(secret)}")
 
     majority = len(hosts) // 2 + 1
@@ -71,7 +76,7 @@ def parse() -> Info:
 
     logging.info("Parsing phase done")
 
-    return Info(
+    return Data(
         uid = uid,
         hosts = hosts,
         secret = secret,

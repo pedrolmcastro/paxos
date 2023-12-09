@@ -1,11 +1,11 @@
 import pathlib
 import argparse
 
-from host import Port
-from util import Singleton
+import host
+import singleton
 
 
-class Parser(metaclass = Singleton):
+class Parser(metaclass = singleton.Singleton):
     """Singleton to hold the CLI parsers"""
 
     def __init__(self) -> None:
@@ -17,7 +17,7 @@ class Parser(metaclass = Singleton):
 
         self.server.add_argument("-p", "--port",
             required = True,
-            type = Port.from_str,
+            type = host.Port.from_str,
             help = "Port where this server will listen for TCP connections",
         )
 

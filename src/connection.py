@@ -1,21 +1,82 @@
+import uuid
 import typing
 import asyncio
+import logging
+import functools
+import collections.abc
 
-from message import Message
-from util import Callback, Callbackable
+import host
+import message
+import callback
+
+
+Delays = collections.abc.Iterable[float]
+Native = tuple[asyncio.StreamReader, asyncio.StreamWriter]
+Handshake = callback.Handler[[asyncio.StreamReader, asyncio.StreamWriter]]
+
+
+async def connect(
+    host: host.Host,
+    delays: Delays,
+    handshake: Handshake = None,
+) -> Native:
+    """Creates a single connection"""
+
+
+    address = host.addresses[0]
+    fails = 0
+
+    for delay in delays:
+        await asyncio.sleep(delay)
+
+        try:
+            reader, writer = await asyncio.open_connection(
+                address.address,
+                address.port.number,
+            )
+
+            await callback.Callback(handshake)(reader, writer)
+            return reader, writer
+        except Exception:
+            fails += 1
+            logging.warning(f"Failed to connect to '{host}': {fails} time(s)")
+
+    raise ConnectionError(f"Failed to connect to '{host}'")
+
+async def connectall(
+    hosts: collections.abc.Iterable[host.Host],
+    delays: Delays,
+    handshake: Handshake = None,
+) -> list[Native]:
+    """Creates multiple connections"""
+
+    tasks = [connect(host, delays, handshake) for host in hosts]
+    connections: list[Native] = []
+
+    for future in asyncio.as_completed(tasks):
+        try:
+            connections.append(await future)
+        except Exception as exception:
+            logging.warning(str(exception))
+
+    return connections
 
 
 class Connection:
     """Wrapper of asyncio streams to manage a single connection"""
 
+    OnFail = callback.Callback[[]]
+    OnReceive = callback.Callback[[message.Message]]
+
     def __init__(self) -> None:
         # Connection streams
-        self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
+        self._reader: asyncio.StreamReader | None = None
+        self._associated: asyncio.StreamWriter | None = None # reader lifetime
 
         # Message queues
-        self._sending: asyncio.Queue[Message.Any] = asyncio.Queue()
-        self._received: asyncio.Queue[Message.Any] = asyncio.Queue()
+        self._sending: asyncio.Queue[message.Message] = asyncio.Queue()
+        self._received: asyncio.Queue[message.Message] = asyncio.Queue()
 
         # Background tasks
         self._sender: asyncio.Task[None] | None = None
@@ -23,108 +84,192 @@ class Connection:
         self._notifier = asyncio.create_task(self._notifiy())
 
         # Callbacks
-        self._onreceive: Callback[[Message.Any], None] = Callback()
+        self._on_fail = self.OnFail()
+        self._on_receive = self.OnReceive()
 
     async def close(self) -> None:
         """Closes the current connection"""
+        await self.set_reader(None)
+        await self.set_writer(None)
 
-        await self._received.join()
+        print("CLOSED")
 
-        self.reader = None
-        self._onreceive.handler = None
-        self._received = asyncio.Queue()
+    async def send(self, message: message.Message) -> None:
+        """Enqueues a message to be sent"""
+        await self._sending.put(message)
 
+    def on_receive(self, handler: callback.Handler[[message.Message]]):
+        """Sets the callback for received messages"""
+        self._on_receive.handler = handler
+
+    def on_fail(self, handler: callback.Handler[[]]):
+        """Sets the callback for failed operations"""
+        self._on_fail.handler = handler
+
+    async def set_writer(self, writer: asyncio.StreamWriter | None) -> None:
+        """Sets a new writer stream and closes the previous"""
+
+        if self._writer is writer:
+            return
+
+        # Close the previous writer
         if self._writer is not None:
             await self._sending.join()
 
             self._writer.close()
             await self._writer.wait_closed()
 
-        self.writer = None
-        self._sending = asyncio.Queue()
-
-    async def send(self, message: Message.Any) -> None:
-        """Enqueues a message to be sent"""
-        await self._sending.put(message)
-
-    def onreceive(self, handler: Callbackable[[Message.Any], None]):
-        """Sets the callback for received messages"""
-        self._onreceive.handler = handler
-
-    @property
-    def reader(self):
-        return self._reader
-
-    @reader.setter
-    def reader(self, reader: asyncio.StreamReader | None) -> None:
-        if self._receiver is not None:
-            self._receiver.cancel()
-            self._receiver = None
-
-        self._reader = reader
-
-        if self._reader is not None:
-            self._receiver = asyncio.create_task(self._receive())
-
-    @property
-    def writer(self):
-        return self._writer
-
-    @writer.setter
-    def writer(self, writer: asyncio.StreamWriter | None) -> None:
+        # Cancel the previously associated sender task
         if self._sender is not None:
             self._sender.cancel()
             self._sender = None
 
         self._writer = writer
 
+        # Associate a new sender task
         if self._writer is not None:
             self._sender = asyncio.create_task(self._send())
 
-    async def _receive(self) -> None:
-        """Task that waits for messages and populates the received queue"""
-        reader = typing.cast(asyncio.StreamReader, self._reader)
+    async def set_reader(
+        self,
+        reader: asyncio.StreamReader | None,
+        associated: asyncio.StreamWriter | None = None
+    ) -> None:
+        """Sets a new reader stream and closes the previous"""
 
-        while True:
-            try:
-                encoded = await reader.readexactly(Message.Header.SIZE)
-                header = Message.Header.decode(encoded)
+        if self._reader is reader:
+            return
 
-                payload = await reader.readexactly(header.length)
-                message = Message.decode(header, payload)
+        # Cancel the previously associated receiver task
+        if self._receiver is not None:
+            self._receiver.cancel()
+            self._receiver = None
 
-                await self._received.put(message)
-            except Exception:
-                pass # TODO
+        await self._received.join()
 
-    async def _notifiy(self) -> None:
-        """Waits in the queue for a received message and consumes it"""
+        # Close the previous writer associated to the reader lifetime
+        if (
+            self._associated is not None and
+            self._associated is not self._writer
+        ):
+            self._associated.close()
+            await self._associated.wait_closed()
 
-        while True:
-            try:
-                message = await self._received.get()
-                await self._onreceive(message)
+        self._reader = reader
+        self._associated = associated
 
-                self._received.task_done()
-            except Exception:
-                pass # TODO
+        # Associate a new receiver task
+        if self._reader is not None:
+            self._receiver = asyncio.create_task(self._receive())
 
     async def _send(self) -> None:
         """Waits in the queue for a message to be sent and consumes it"""
         writer = typing.cast(asyncio.StreamWriter, self._writer)
 
-        while True:
-            try:
-                message = await self._sending.get()
-
-                writer.write(Message.encode(message))
-                await writer.drain()
-
+        try:
+            while True:
+                dequeued = await self._sending.get()
+                await message.send(writer, dequeued)
                 self._sending.task_done()
-            except Exception:
-                pass # TODO
+        except Exception:
+            print("Fail on send")
+            await self._on_fail()
+            await self.close()
+
+    async def _receive(self) -> None:
+        """Task that waits for messages and populates the received queue"""
+        reader = typing.cast(asyncio.StreamReader, self._reader)
+
+        try:
+            while True:
+                received = await message.receive(reader)
+                await self._received.put(received)
+        except Exception:
+            print("Fail on receive")
+            await self._on_fail()
+            await self.close()
+
+    async def _notifiy(self) -> None:
+        """Waits in the queue for a received message and consumes it"""
+
+        try:
+            while True:
+                dequeued = await self._received.get()
+                await self._on_receive(dequeued)
+                self._received.task_done()
+        except Exception:
+            print("Fail on notify")
+            await self._on_fail()
+            await self.close()
 
     async def __aenter__(self) -> "Connection":
+        return self
+
+    async def __aexit__(self, type, value, traceback) -> None:
+        await self.close()
+
+
+class Map(collections.abc.MutableMapping):
+    """Mapping container from uid to connection"""
+
+    OnReceive = callback.Callback[[uuid.UUID, message.Message]]
+
+    def __init__(self) -> None:
+        self._connections: dict[uuid.UUID, Connection] = {}
+        self._on_receive: Map.OnReceive = callback.Callback()
+
+    async def close(self) -> None:
+        """Closes all the contained connections"""
+        uids = list(iter(self)) # Allow removing while iterating
+        await asyncio.gather(*(self.disconnect(uid) for uid in uids))
+
+    async def disconnect(self, uid: uuid.UUID) -> None:
+        """Closes the connection with the uid"""
+        await self[uid].close()
+        del self[uid]
+
+    async def send(self, uid: uuid.UUID, message: message.Message) -> None:
+        """Sends the message to the connection with the uid"""
+        await self[uid].send(message)
+
+    async def broadcast(self, message: message.Message) -> None:
+        """Sends the message to all the contained connections"""
+        await asyncio.gather(*(self.send(uid, message) for uid in self))
+
+    def on_receive(
+        self,
+        handler: callback.Handler[[uuid.UUID, message.Message]]
+    ) -> None:
+        """Sets the callback for received messages"""
+        self._on_receive.handler = handler
+
+    def __getitem__(self, uid: uuid.UUID) -> Connection:
+        return self._connections[uid]
+
+    def __setitem__(self, uid: uuid.UUID, connection: Connection) -> None:
+        async def on_fail() -> None:
+            if uid in self:
+                logging.warning(f"Lost connection to host '{uid}'")
+                del self[uid]
+
+        async def on_receive(message: message.Message) -> None:
+            await self._on_receive(uid, message)
+
+        connection.on_fail(on_fail)
+        connection.on_receive(on_receive)
+
+        self._connections[uid] = connection
+
+    def __delitem__(self, uid: uuid.UUID) -> None:
+        del self._connections[uid]
+
+    def __iter__(self) -> typing.Iterator[uuid.UUID]:
+        return iter(self._connections)
+
+    def __len__(self) -> int:
+        return len(self._connections)
+
+    async def __aenter__(self) -> "Map":
         return self
 
     async def __aexit__(self, type, value, traceback) -> None:
