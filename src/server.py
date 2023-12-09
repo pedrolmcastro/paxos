@@ -8,52 +8,45 @@ import dataclasses
 from cli import Parser
 from util import Error
 from message import Message
-from connections import Connections
+from connection import Connection
+from security import Security, Authn
 from host import Host, Hostfile, Port
 
 
 @dataclasses.dataclass(frozen = True)
 class Info:
     port: Port
+    secret: str
     majority: int
     uid: uuid.UUID
     hosts: list[Host]
     hostfile: pathlib.Path
 
 
-async def main():
+def onreceive(message: Message.Any) -> None:
+    if isinstance(message, Authn):
+        print(f"Authenticated: {Security().isvalid(message)}")
+
+    print(message)
+
+
+async def main() -> None:
     logging.root.level = logging.DEBUG
     info = parse()
 
-    # This must be defined early to be accessable from the closures
-    connections: Connections | None = None
+    address = info.hosts[0].info[0]
+    reader, writer = await asyncio.open_connection(address.address, address.port.number)
 
-    async def on_disconnect(length: int):
-        if length < info.majority:
-            await typing.cast(Connections, connections).close()
-            Error.exit("Lost connection to the majority of the servers")
+    async with Connection() as connection:
+        connection.reader = reader
+        connection.writer = writer
 
-    async def serve(
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter
-    ) -> None:
-        pass
+        connection.onreceive(onreceive)
 
-    # try:
-    #     server = await asyncio.start_server(serve, "localhost", port)
-    # except Exception as exception:
-    #     error(f"Failed to start server: {exception}")
+        message = Message.Accept("Hello, world", 1)
+        await connection.send(message)
 
-    connections = await Connections.connect(info.hosts, [1, 2, 5], on_disconnect)
-
-    if len(connections) < info.majority:
-        await connections.close()
-        Error.exit("Failed to connect to the majority of the servers")
-
-    # await server.serve_forever()
-
-    message = Message.Accepted("Hello, world!", 0)
-    await connections.broadcast(Message.encode(message))
+        await asyncio.sleep(0.5)
 
 
 def parse() -> Info:
@@ -68,19 +61,31 @@ def parse() -> Info:
 
     logging.debug(f"Hosts: [{', '.join(map(str, hosts))}]")
 
-    majority = len(hosts) // 2 + 1
-    logging.debug(f"Calculated majority: {majority}")
-
     uid = uuid.uuid4()
     logging.debug(f"Generated UID: {uid}")
 
+    secret = Security().secret
+    logging.debug(f"Detected secret: {'*' * len(secret)}")
+
+    majority = len(hosts) // 2 + 1
+    logging.debug(f"Calculated majority: {majority}")
+
     logging.info("Parsing successfully concluded")
 
-    return Info(parsed.port, majority, uid, hosts, parsed.hostfile)
+    return Info(
+        uid = uid,
+        hosts = hosts,
+        secret = secret,
+        port = parsed.port,
+        majority = majority,
+        hostfile = parsed.hostfile,
+    )
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        pass
+    finally:
         logging.info("Server closed")

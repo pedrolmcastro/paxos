@@ -55,5 +55,5 @@ class Security(metaclass = Singleton):
 
         return hash.hexdigest()
 
-    def is_valid(self, authn: Authn) -> bool:
+    def isvalid(self, authn: Authn) -> bool:
         return self.hash(authn) == authn.hash

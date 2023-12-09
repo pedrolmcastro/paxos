@@ -59,7 +59,7 @@ class Message:
     )
 
 
-    class _Type(enum.Enum):
+    class Type(enum.Enum):
         ACK      = enum.auto()
         DENIED   = enum.auto()
         WRITE    = enum.auto()
@@ -71,7 +71,7 @@ class Message:
         ACCEPTED = enum.auto()
 
         @classmethod
-        def from_type(cls, type: type["Message.Any"]) -> "Message._Type":
+        def from_type(cls, type: type["Message.Any"]) -> "Message.Type":
             match type:
                 case Message.Ack:
                     return cls.ACK
@@ -118,23 +118,43 @@ class Message:
             raise ValueError(f"Unknown message type: '{self}'")
 
 
+    @dataclasses.dataclass(frozen = True)
+    class Header:
+        length: int
+        type: "Message.Type"
+
+        SIZE: typing.ClassVar[int] = 5
+        _PACK: typing.ClassVar[str] = "!IB"
+
+        def encode(self) -> bytes:
+            return struct.pack(self._PACK, self.length, self.type.value)
+
+        @classmethod
+        def decode(cls, encoded: bytes) -> "Message.Header":
+            if len(encoded) != cls.SIZE:
+                raise ValueError("Invalid encoded message header length")
+
+            length, type = struct.unpack(cls._PACK, encoded)
+            return cls(length = length, type = Message.Type(type))
+
+
     @classmethod
-    def encode(cls, message: "Message.Any") -> bytes:
+    def encode(cls, message: Any) -> bytes:
         payload = json.dumps(dataclasses.asdict(message)).encode()
-        enumerated = cls._Type.from_type(type(message))
-        return struct.pack("!IB", len(payload), enumerated.value) + payload
+
+        header = cls.Header(
+            length = len(payload),
+            type = cls.Type.from_type(type(message)),
+        )
+
+        return header.encode() + payload
 
     @classmethod
-    def decode(cls, encoded: bytes) -> "Message.Any":
-        if len(encoded) < 5:
-            raise ValueError("Missing encoded message header")
-
-        length, enumerated = struct.unpack("!IB", encoded[:5])
-
-        if len(encoded) != length + 5:
+    def decode(cls, header: Header, payload: bytes) -> Any:
+        if len(payload) != header.length:
             raise ValueError("Invalid encoded message length")
 
-        type = cls._Type(enumerated).to_type()
-        payload = typing.cast(dict[str, typing.Any], json.loads(encoded[5:]))
+        type = header.type.to_type()
+        decoded = json.loads(payload)
 
-        return type(**payload)
+        return type(**typing.cast(dict[str, typing.Any], decoded))
