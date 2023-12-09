@@ -2,7 +2,6 @@ import sys
 import typing
 import inspect
 import logging
-import threading
 import collections.abc
 
 
