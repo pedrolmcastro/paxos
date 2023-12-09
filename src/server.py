@@ -1,5 +1,4 @@
 import uuid
-import typing
 import asyncio
 import logging
 import pathlib
@@ -9,8 +8,8 @@ from cli import Parser
 from util import Error
 from message import Message
 from connection import Connection
-from security import Security, Authn
 from host import Host, Hostfile, Port
+from security import Security, Authenticated
 
 
 @dataclasses.dataclass(frozen = True)
@@ -24,8 +23,8 @@ class Info:
 
 
 def onreceive(message: Message.Any) -> None:
-    if isinstance(message, Authn):
-        print(f"Authenticated: {Security().isvalid(message)}")
+    if isinstance(message, Authenticated):
+        print(f"Authenticated: {Security().authenticate(message)}")
 
     print(message)
 
@@ -34,7 +33,7 @@ async def main() -> None:
     logging.root.level = logging.DEBUG
     info = parse()
 
-    address = info.hosts[0].info[0]
+    address = info.hosts[0].addresses[0]
     reader, writer = await asyncio.open_connection(address.address, address.port.number)
 
     async with Connection() as connection:
@@ -70,7 +69,7 @@ def parse() -> Info:
     majority = len(hosts) // 2 + 1
     logging.debug(f"Calculated majority: {majority}")
 
-    logging.info("Parsing successfully concluded")
+    logging.info("Parsing phase done")
 
     return Info(
         uid = uid,

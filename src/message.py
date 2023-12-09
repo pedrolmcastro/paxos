@@ -4,14 +4,14 @@ import struct
 import typing
 import dataclasses
 
-from security import Authn
+from security import Authenticated
 
 
 class Message:
     """Namespace for functionalities related to network messages"""
 
     @dataclasses.dataclass(frozen = True)
-    class Ack:
+    class Acknowledge:
         pass
 
     @dataclasses.dataclass(frozen = True)
@@ -28,53 +28,53 @@ class Message:
         recursive: bool
 
     @dataclasses.dataclass(frozen = True)
-    class Found(Authn):
+    class Found(Authenticated):
         value: str
         found: bool
 
     @dataclasses.dataclass(frozen = True)
-    class Prepare(Authn):
+    class Prepare(Authenticated):
         proposal: int
 
     @dataclasses.dataclass(frozen = True)
-    class Promise(Authn):
+    class Promise(Authenticated):
         proposal: int
         accepted: str
         previous: int | None
 
     @dataclasses.dataclass(frozen = True)
-    class Accept(Authn):
+    class Accept(Authenticated):
         value: str
         proposal: int
 
     @dataclasses.dataclass(frozen = True)
-    class Accepted(Authn):
+    class Accepted(Authenticated):
         value: str
         proposal: int
 
 
     Any = (
-        Ack | Denied | Write | Search | Found |
+        Acknowledge | Denied | Write | Search | Found |
         Prepare | Promise | Accept | Accepted
     )
 
 
     class Type(enum.Enum):
-        ACK      = enum.auto()
-        DENIED   = enum.auto()
-        WRITE    = enum.auto()
-        SEARCH   = enum.auto()
-        FOUND    = enum.auto()
-        PREPARE  = enum.auto()
-        PROMISE  = enum.auto()
-        ACCEPT   = enum.auto()
-        ACCEPTED = enum.auto()
+        ACKNOWLEDGE = enum.auto()
+        DENIED      = enum.auto()
+        WRITE       = enum.auto()
+        SEARCH      = enum.auto()
+        FOUND       = enum.auto()
+        PREPARE     = enum.auto()
+        PROMISE     = enum.auto()
+        ACCEPT      = enum.auto()
+        ACCEPTED    = enum.auto()
 
         @classmethod
         def from_type(cls, type: type["Message.Any"]) -> "Message.Type":
             match type:
-                case Message.Ack:
-                    return cls.ACK
+                case Message.Acknowledge:
+                    return cls.ACKNOWLEDGE
                 case Message.Denied:
                     return cls.DENIED
                 case Message.Write:
@@ -96,8 +96,8 @@ class Message:
 
         def to_type(self) -> type["Message.Any"]:
             match self:
-                case self.ACK:
-                    return Message.Ack
+                case self.ACKNOWLEDGE:
+                    return Message.Acknowledge
                 case self.DENIED:
                     return Message.Denied
                 case self.WRITE:

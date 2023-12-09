@@ -7,7 +7,7 @@ from util import Error, Singleton
 
 
 @dataclasses.dataclass(frozen = True, kw_only = True)
-class Authn:
+class Authenticated:
     hash: str = ""
 
     def __post_init__(self):
@@ -44,8 +44,8 @@ class Security(metaclass = Singleton):
 
         raise ValueError(f"Unable to encode type: '{type(value)}'")
 
-    def hash(self, authn: Authn) -> str:
-        items = dataclasses.asdict(authn).items()
+    def hash(self, authenticated: Authenticated) -> str:
+        items = dataclasses.asdict(authenticated).items()
         values = (value for field, value in items if field != "hash")
 
         hash = hashlib.sha256(
@@ -55,5 +55,5 @@ class Security(metaclass = Singleton):
 
         return hash.hexdigest()
 
-    def isvalid(self, authn: Authn) -> bool:
-        return self.hash(authn) == authn.hash
+    def authenticate(self, authenticated: Authenticated) -> bool:
+        return self.hash(authenticated) == authenticated.hash

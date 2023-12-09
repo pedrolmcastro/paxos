@@ -7,13 +7,13 @@ import dataclasses
 class Port:
     """Wrapper to represent a port with a valid number"""
 
-    MIN = 1
-    MAX = 65535
+    LOW = 1
+    HIGH = 65535
 
     def __init__(self, number: int) -> None:
-        if number < self.MIN or number > self.MAX:
+        if number < self.LOW or number > self.HIGH:
             raise ValueError(
-                f"Port out of range [{self.MIN}, {self.MAX}]: '{number}'"
+                f"Port out of range [{self.LOW}, {self.HIGH}]: '{number}'"
             )
 
         self._number = number
@@ -38,9 +38,8 @@ class Address:
     """Object-like representation of the tuple returned by socket.getaddrinfo"""
 
     Sockaddr = tuple[str, int] | tuple[str, int, int, int]
-    Data = tuple[socket.AddressFamily, socket.SocketKind, int, str, Sockaddr]
 
-    data: Data
+    data: tuple[socket.AddressFamily, socket.SocketKind, int, str, Sockaddr]
 
     @property
     def family(self) -> socket.AddressFamily:
@@ -93,11 +92,11 @@ class Host:
 
     host: str
     port: Port
-    info: list[Address] = dataclasses.field(init = False)
+    addresses: list[Address] = dataclasses.field(init = False)
 
     def __post_init__(self) -> None:
         try:
-            info = socket.getaddrinfo(
+            addresses = socket.getaddrinfo(
                 self.host,
                 self.port.number,
                 proto = socket.IPPROTO_TCP
@@ -105,7 +104,11 @@ class Host:
         except socket.gaierror:
             raise ValueError(f"Failed to get address information: '{self}'")
 
-        object.__setattr__(self, "info", [Address(address) for address in info])
+        object.__setattr__(
+            self,
+            "addresses",
+            [Address(address) for address in addresses]
+        )
 
     @classmethod
     def from_hostport(cls, hostport: str) -> "Host":
