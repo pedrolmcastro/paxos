@@ -17,15 +17,13 @@ class Error:
 
 class Singleton(type):
     # From https://refactoring.guru/design-patterns/singleton/python/example
-    """Metaclass to define thread-safe singletons"""
+    """Metaclass to define singletons"""
 
-    _lock = threading.Lock()
     _instances: dict["Singleton", typing.Any] = {}
 
     def __call__(self, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
-        with self._lock:
-            if self not in self._instances:
-                self._instances[self] = super().__call__(*args, **kwargs)
+        if self not in self._instances:
+            self._instances[self] = super().__call__(*args, **kwargs)
 
         return self._instances[self]
 
