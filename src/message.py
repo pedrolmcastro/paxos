@@ -9,21 +9,26 @@ import security
 
 
 @dataclasses.dataclass(frozen = True)
+class Accept(security.Authenticated):
+    value: str
+    proposal: int
+
+@dataclasses.dataclass(frozen = True)
+class Accepted(security.Authenticated):
+    value: str
+    proposal: int
+
+@dataclasses.dataclass(frozen = True)
 class Acknowledge:
+    pass
+
+@dataclasses.dataclass(frozen = True)
+class Client:
     pass
 
 @dataclasses.dataclass(frozen = True)
 class Denied:
     reason: str
-
-@dataclasses.dataclass(frozen = True)
-class Write:
-    value: str
-
-@dataclasses.dataclass(frozen = True)
-class Search:
-    value: str
-    recursive: bool
 
 @dataclasses.dataclass(frozen = True)
 class Found(security.Authenticated):
@@ -41,75 +46,88 @@ class Promise(security.Authenticated):
     previous: int | None
 
 @dataclasses.dataclass(frozen = True)
-class Accept(security.Authenticated):
+class Search:
     value: str
-    proposal: int
+    recursive: bool
 
 @dataclasses.dataclass(frozen = True)
-class Accepted(security.Authenticated):
+class Server(security.Authenticated):
+    uid: int
+
+@dataclasses.dataclass(frozen = True)
+class Write:
     value: str
-    proposal: int
 
 
 Message = (
-    Acknowledge | Denied | Write | Search | Found |
-    Prepare | Promise | Accept | Accepted
+    Accept | Accepted | Acknowledge | Client | Denied | Found | Prepare |
+    Promise | Search | Server | Write
 )
 
 
 class Type(enum.Enum):
+    ACCEPT      = enum.auto()
+    ACCEPTED    = enum.auto()
     ACKNOWLEDGE = enum.auto()
+    CLIENT      = enum.auto()
     DENIED      = enum.auto()
-    WRITE       = enum.auto()
-    SEARCH      = enum.auto()
     FOUND       = enum.auto()
     PREPARE     = enum.auto()
     PROMISE     = enum.auto()
-    ACCEPT      = enum.auto()
-    ACCEPTED    = enum.auto()
+    SEARCH      = enum.auto()
+    SERVER      = enum.auto()
+    WRITE       = enum.auto()
 
     @classmethod
     def from_message(cls, message: Message) -> "Type":
         match message:
+            case Accept():
+                return cls.ACCEPT
+            case Accepted():
+                return cls.ACCEPTED
             case Acknowledge():
                 return cls.ACKNOWLEDGE
+            case Client():
+                return cls.CLIENT
             case Denied():
                 return cls.DENIED
-            case Write():
-                return cls.WRITE
-            case Search():
-                return cls.SEARCH
             case Found():
                 return cls.FOUND
             case Prepare():
                 return cls.PREPARE
             case Promise():
                 return cls.PROMISE
-            case Accept():
-                return cls.ACCEPT
-            case Accepted():
-                return cls.ACCEPTED
+            case Search():
+                return cls.SEARCH
+            case Server():
+                return cls.SERVER
+            case Write():
+                return cls.WRITE
 
     def to_type(self) -> type[Message]:
         match self:
+            case self.ACCEPT:
+                return Accept
+            case self.ACCEPTED:
+                return Accepted
             case self.ACKNOWLEDGE:
                 return Acknowledge
+            case self.CLIENT:
+                return Client
             case self.DENIED:
                 return Denied
-            case self.WRITE:
-                return Write
-            case self.SEARCH:
-                return Search
             case self.FOUND:
                 return Found
             case self.PREPARE:
                 return Prepare
             case self.PROMISE:
                 return Promise
-            case self.ACCEPT:
-                return Accept
-            case self.ACCEPTED:
-                return Accepted
+            case self.SEARCH:
+                return Search
+            case self.SERVER:
+                return Server
+            case self.WRITE:
+                return Write
 
         raise ValueError(f"Unknown message type: '{self}'")
 

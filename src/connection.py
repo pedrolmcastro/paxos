@@ -1,7 +1,6 @@
 import uuid
 import typing
 import asyncio
-import logging
 import collections.abc
 
 import host
@@ -10,6 +9,7 @@ import callback
 
 
 Delays = collections.abc.Iterable[float]
+OnFail = callback.Handler[[Exception, host.Host, int]]
 Native = tuple[asyncio.StreamReader, asyncio.StreamWriter]
 Handshake = callback.Handler[[asyncio.StreamReader, asyncio.StreamWriter]]
 
@@ -18,10 +18,14 @@ async def connect(
     host: host.Host,
     delays: Delays,
     handshake: Handshake = None,
+    on_fail: OnFail = None,
 ) -> Native:
     """Creates a single connection"""
 
+    # Convert the handlers to callbacks
     handshake = callback.Callback(handshake)
+    on_fail = callback.Callback(on_fail)
+
     address = host.addresses[0]
     fails = 0
 
@@ -36,9 +40,9 @@ async def connect(
 
             await handshake(reader, writer)
             return reader, writer
-        except Exception:
+        except Exception as exception:
             fails += 1
-            logging.warning(f"Failed to connect to '{host}': {fails} time(s)")
+            await on_fail(exception, host, fails)
 
     raise ConnectionError(f"Failed to connect to '{host}'")
 
@@ -46,17 +50,18 @@ async def connectall(
     hosts: collections.abc.Iterable[host.Host],
     delays: Delays,
     handshake: Handshake = None,
+    on_fail: OnFail = None,
 ) -> list[Native]:
     """Creates multiple connections"""
 
-    tasks = [connect(host, delays, handshake) for host in hosts]
+    tasks = [connect(host, delays, handshake, on_fail) for host in hosts]
     connections: list[Native] = []
 
     for future in asyncio.as_completed(tasks):
         try:
             connections.append(await future)
-        except Exception as exception:
-            logging.warning(str(exception))
+        except ConnectionError:
+            pass
 
     return connections
 
@@ -325,8 +330,8 @@ class Map(collections.abc.Sized, collections.abc.Container):
 
         async def on_fail() -> None:
             if uid in self:
-                await self._on_fail(uid)
                 del self._connections[uid]
+                await self._on_fail(uid)
 
         async def on_receive(message: message.Message) -> None:
             await self._received.put((uid, message))
