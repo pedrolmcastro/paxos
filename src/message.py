@@ -36,7 +36,7 @@ class Found(security.Authenticated):
     found: bool
 
 @dataclasses.dataclass(frozen = True)
-class Learned:
+class Learn:
     value: str
 
 @dataclasses.dataclass(frozen = True)
@@ -64,7 +64,7 @@ class Write:
 
 
 Message = (
-    Accept | Accepted | Acknowledge | Client | Denied | Found | Learned |
+    Accept | Accepted | Acknowledge | Client | Denied | Found | Learn |
     Prepare | Promise | Search | Server | Write
 )
 
@@ -76,7 +76,7 @@ class Type(enum.Enum):
     CLIENT      = enum.auto()
     DENIED      = enum.auto()
     FOUND       = enum.auto()
-    LEARNED     = enum.auto()
+    LEARN       = enum.auto()
     PREPARE     = enum.auto()
     PROMISE     = enum.auto()
     SEARCH      = enum.auto()
@@ -98,8 +98,8 @@ class Type(enum.Enum):
                 return cls.DENIED
             case Found():
                 return cls.FOUND
-            case Learned():
-                return cls.LEARNED
+            case Learn():
+                return cls.LEARN
             case Prepare():
                 return cls.PREPARE
             case Promise():
@@ -125,8 +125,8 @@ class Type(enum.Enum):
                 return Denied
             case self.FOUND:
                 return Found
-            case self.LEARNED:
-                return Learned
+            case self.LEARN:
+                return Learn
             case self.PREPARE:
                 return Prepare
             case self.PROMISE:

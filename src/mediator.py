@@ -5,6 +5,7 @@ import collections.abc
 
 import host
 import error
+import paxos
 import message
 import storage
 import security
@@ -21,10 +22,10 @@ class Mediator:
         # Basic information
         self._uid = uid
         self._hosts = hosts
-        self._storage = storage
         self._majority = len(self._hosts) // 2 + 1
 
-        # Server
+        # Server and events
+        self._done = asyncio.Event()
         self._server: asyncio.Server | None = None
 
         # Connection maps
@@ -34,10 +35,7 @@ class Mediator:
         self._servers.on_fail(self._on_server_fail)
 
         # Paxos state
-        self._accepted = ""
-        self._previous: int | None = None
-        self._promised: int | None = None
-        self._searching: dict[str, tuple[uuid.UUID, int]] = {}
+        self._paxos = paxos.Handler(self._majority, storage, self)
 
     async def start(self, port: host.Port, delays: connection.Delays) -> None:
         await self._clients.on_receive(self._on_receive)
@@ -74,6 +72,9 @@ class Mediator:
         """Sends the message to all the connected servers"""
         await self._servers.broadcast(message)
 
+    async def done(self) -> None:
+        await self._done.wait()
+
     async def close(self):
         await self._clients.clear()
         await self._servers.clear()
@@ -81,6 +82,8 @@ class Mediator:
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
+
+        self._done.set()
 
     async def _handshake(
         self,
@@ -162,7 +165,7 @@ class Mediator:
 
     async def _on_receive(
         self,
-        uid: uuid.UUID,
+        sender: uuid.UUID,
         received: message.Message
     ) -> None:
         """Callback for received messages"""
@@ -171,86 +174,12 @@ class Mediator:
             isinstance(received, security.Authenticated) and
             not security.authenticate(received)
         ):
-            await self.send(uid, message.Denied(
+            await self.send(sender, message.Denied(
                 reason = "Authentication failed"
             ))
             return logging.warning(f"Message authentication failed: {received}")
 
-        match received:
-            case message.Accept():
-                if self._promised is None or received.proposal > self._promised:
-                    self._promised = received.proposal
-                    self._previous = received.proposal
-                    self._accepted = received.value
-
-                    await self.broadcast(message.Accepted(
-                        value = self._accepted,
-                        proposal = self._previous,
-                    ))
-                else:
-                    await self.send(uid, message.Denied(
-                        reason = "Already promised to a higher proposal"
-                    ))
-
-            case message.Accepted():
-                pass
-
-            case message.Found():
-                if received.value not in self._searching:
-                    return
-
-                searcher, fails = self._searching[received.value]
-
-                if received.found:
-                    del self._searching[received.value]
-
-                    await self.send(searcher, message.Found(
-                        value = received.value,
-                        found = True,
-                    ))
-                else:
-                    fails += 1
-                    self._searching[received.value] = (searcher, fails)
-
-                if fails >= self._majority:
-                    del self._searching[received.value]
-
-                    await self.send(searcher, message.Found(
-                        value = received.value,
-                        found = False,
-                    ))
-
-            case message.Learned():
-                self._storage.add(received.value)
-
-            case message.Prepare():
-                if self._promised is None or received.proposal > self._promised:
-                    self._promised = received.proposal
-
-                    await self.send(uid, message.Promise(
-                        proposal = self._promised,
-                        accepted = self._accepted,
-                        previous = self._previous,
-                    ))
-                else:
-                    await self.send(uid, message.Denied(
-                        reason = "Already promised to a higher proposal"
-                    ))
-
-            case message.Search():
-                if received.recursive:
-                    self._searching[received.value] = (uid, 0)
-                    await self.send(uid, message.Acknowledge())
-
-                    await self.broadcast(message.Search(
-                        value = received.value,
-                        recursive = False,
-                    ))
-                else:
-                    await self.send(uid, message.Found(
-                        value = received.value,
-                        found = received.value in self._storage,
-                    ))
+        await self._paxos.handle(sender, received)
 
     @staticmethod
     def _on_connect_fail(

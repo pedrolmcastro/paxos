@@ -1,11 +1,12 @@
 import uuid
 import asyncio
 import logging
+import pathlib
 
 import cli
 import host
 import error
-import message
+import storage
 import mediator
 import security
 
@@ -23,17 +24,19 @@ async def main() -> None:
 
     logging.debug(f"Hosts: [{', '.join(map(str, hosts))}]")
 
-    uid = uuid.uuid4()
-    logging.debug(f"Generated UID: {uid}")
+    try:
+        store = storage.Storage(pathlib.Path(f"storage/{parsed.port}.txt"))
+    except Exception as exception:
+        error.exit(f"Failed to open storage: {exception}")
 
     security.Context()
 
-    async with mediator.Mediator(uid, hosts) as server:
-        await server.start(parsed.port, [0.1, 1.0, 2.0, 5.0])
+    uid = uuid.uuid4()
+    logging.debug(f"Generated UID: {uid}")
 
-        while True:
-            await server.broadcast(message.Denied("Hello, world!"))
-            await asyncio.sleep(5.0)
+    async with mediator.Mediator(uid, store, hosts) as server:
+        await server.start(parsed.port, [0.1, 1.0, 2.0, 5.0])
+        await server.done()
 
 
 if __name__ == "__main__":
