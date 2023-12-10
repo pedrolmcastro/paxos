@@ -64,8 +64,8 @@ class Write:
 
 
 Message = (
-    Accept | Accepted | Acknowledge | Client | Denied | Found | Prepare |
-    Promise | Search | Server | Write
+    Accept | Accepted | Acknowledge | Client | Denied | Found | Learned |
+    Prepare | Promise | Search | Server | Write
 )
 
 
