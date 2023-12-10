@@ -5,6 +5,7 @@ import collections.abc
 
 import host
 import error
+import paxos
 import message
 import security
 import connection
@@ -29,6 +30,11 @@ class Mediator:
         self._servers = connection.Map()
         self._clients.on_fail(self._on_client_fail)
         self._servers.on_fail(self._on_server_fail)
+
+        # Paxos state
+        self._promised: int | None = None
+        self._previous: int | None = None
+        self._accepted = ""
 
     async def start(self, port: host.Port, delays: connection.Delays) -> None:
         await self._clients.on_receive(self._on_receive)
@@ -115,14 +121,16 @@ class Mediator:
             reason = "Authentication failed"
 
             try:
-                await message.send(writer, message.Denied(reason))
+                await message.send(writer, message.Denied(reason = reason))
             finally:
                 return await fail(writer, reason)
 
         match received:
             case message.Server():
                 try:
-                    await message.send(writer, message.Server(self._uid.int))
+                    await message.send(writer, message.Server(
+                        uid = self._uid.int,
+                    ))
                 except Exception as exception:
                     return await fail(writer, str(exception))
 
@@ -145,7 +153,7 @@ class Mediator:
                 reason = f"Unexpected greeting message: '{type(received)}'"
 
                 try:
-                    await message.send(writer, message.Denied(reason))
+                    await message.send(writer, message.Denied(reason = reason))
                 finally:
                     return await fail(writer, reason)
 
@@ -160,10 +168,44 @@ class Mediator:
             isinstance(received, security.Authenticated) and
             not security.authenticate(received)
         ):
-            logging.warning(f"Message authentication failed: {received}")
-            return await self.send(uid, message.Denied("Authentication failed"))
+            await self.send(uid, message.Denied(
+                reason = "Authentication failed"
+            ))
+            return logging.warning(f"Message authentication failed: {received}")
 
-        logging.debug(f"Message from '{uid}': {received}")
+        match received:
+            case message.Accept():
+                if self._promised is None or received.proposal > self._promised:
+                    self._promised = received.proposal
+                    self._previous = received.proposal
+                    self._accepted = received.value
+
+                    self.broadcast(message.Accepted(
+                        value = self._accepted,
+                        proposal = self._previous,
+                    ))
+                else:
+                    self.send(uid, message.Denied(
+                        reason = "Already promised to a higher proposal"
+                    ))
+
+            case message.Learned():
+                # TODO: store
+                pass
+
+            case message.Prepare():
+                if self._promised is None or received.proposal > self._promised:
+                    self._promised = received.proposal
+
+                    self.send(uid, message.Promise(
+                        proposal = self._promised,
+                        accepted = self._accepted,
+                        previous = self._previous,
+                    ))
+                else:
+                    self.send(uid, message.Denied(
+                        reason = "Already promised to a higher proposal"
+                    ))
 
     @staticmethod
     def _on_connect_fail(
@@ -182,7 +224,6 @@ class Mediator:
     def _on_server_fail(self, uid: uuid.UUID) -> None:
         """Callback for server connection lost"""
         logging.warning(f"Lost connection to server: '{uid}'")
-        print(len(self._servers))
 
         if len(self._servers) < self._majority:
             error.exit("Lost connection to the majority of servers")

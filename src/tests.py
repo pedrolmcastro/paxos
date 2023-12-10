@@ -1,4 +1,4 @@
-import paxos
+import REF
 import paxosLib
 
 if __name__ == "__main__":

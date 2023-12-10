@@ -36,6 +36,10 @@ class Found(security.Authenticated):
     found: bool
 
 @dataclasses.dataclass(frozen = True)
+class Learned:
+    value: str
+
+@dataclasses.dataclass(frozen = True)
 class Prepare(security.Authenticated):
     proposal: int
 
@@ -72,6 +76,7 @@ class Type(enum.Enum):
     CLIENT      = enum.auto()
     DENIED      = enum.auto()
     FOUND       = enum.auto()
+    LEARNED     = enum.auto()
     PREPARE     = enum.auto()
     PROMISE     = enum.auto()
     SEARCH      = enum.auto()
@@ -93,6 +98,8 @@ class Type(enum.Enum):
                 return cls.DENIED
             case Found():
                 return cls.FOUND
+            case Learned():
+                return cls.LEARNED
             case Prepare():
                 return cls.PREPARE
             case Promise():
@@ -118,6 +125,8 @@ class Type(enum.Enum):
                 return Denied
             case self.FOUND:
                 return Found
+            case self.LEARNED:
+                return Learned
             case self.PREPARE:
                 return Prepare
             case self.PROMISE:
