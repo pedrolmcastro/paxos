@@ -74,13 +74,15 @@ class Connection:
         self._reader: asyncio.StreamReader | None = None
         self._associated: asyncio.StreamWriter | None = None # reader lifetime
 
-        # Message queues
+        # Message queues and events
+        self._failed = asyncio.Event()
         self._sending: asyncio.Queue[message.Message] = asyncio.Queue()
         self._received: asyncio.Queue[message.Message] = asyncio.Queue()
 
         # Background tasks
         self._sender: asyncio.Task[None] | None = None
         self._receiver: asyncio.Task[None] | None = None
+        self._aborter = asyncio.create_task(self._abort())
         self._notifier = asyncio.create_task(self._notifiy())
 
         # Callbacks
@@ -91,8 +93,7 @@ class Connection:
         """Closes the current connection"""
         await self.set_reader(None)
         await self.set_writer(None)
-
-        print("CLOSED")
+        self._aborter.cancel()
 
     async def send(self, message: message.Message) -> None:
         """Enqueues a message to be sent"""
@@ -166,41 +167,41 @@ class Connection:
         """Waits in the queue for a message to be sent and consumes it"""
         writer = typing.cast(asyncio.StreamWriter, self._writer)
 
-        try:
-            while True:
-                dequeued = await self._sending.get()
+        while True:
+            dequeued = await self._sending.get()
+
+            try:
                 await message.send(writer, dequeued)
-                self._sending.task_done()
-        except Exception:
-            print("Fail on send")
-            await self._on_fail()
-            await self.close()
+            except Exception:
+                self._failed.set()
+
+            self._sending.task_done()
 
     async def _receive(self) -> None:
-        """Task that waits for messages and populates the received queue"""
+        """Waits for messages and populates the received queue"""
         reader = typing.cast(asyncio.StreamReader, self._reader)
 
-        try:
-            while True:
+        while True:
+            try:
                 received = await message.receive(reader)
-                await self._received.put(received)
-        except Exception:
-            print("Fail on receive")
-            await self._on_fail()
-            await self.close()
+            except Exception:
+                return self._failed.set()
+
+            await self._received.put(received)
 
     async def _notifiy(self) -> None:
         """Waits in the queue for a received message and consumes it"""
 
-        try:
-            while True:
-                dequeued = await self._received.get()
-                await self._on_receive(dequeued)
-                self._received.task_done()
-        except Exception:
-            print("Fail on notify")
-            await self._on_fail()
-            await self.close()
+        while True:
+            dequeued = await self._received.get()
+            await self._on_receive(dequeued)
+            self._received.task_done()
+
+    async def _abort(self) -> None:
+        """Waits for the failed event and closes the connection if it happens"""
+        await self._failed.wait()
+        await self._on_fail()
+        await self.close()
 
     async def __aenter__(self) -> "Connection":
         return self
