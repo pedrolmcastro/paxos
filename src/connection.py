@@ -2,7 +2,6 @@ import uuid
 import typing
 import asyncio
 import logging
-import functools
 import collections.abc
 
 import host
@@ -22,7 +21,7 @@ async def connect(
 ) -> Native:
     """Creates a single connection"""
 
-
+    handshake = callback.Callback(handshake)
     address = host.addresses[0]
     fails = 0
 
@@ -35,7 +34,7 @@ async def connect(
                 address.port.number,
             )
 
-            await callback.Callback(handshake)(reader, writer)
+            await handshake(reader, writer)
             return reader, writer
         except Exception:
             fails += 1
@@ -74,38 +73,20 @@ class Connection:
         self._reader: asyncio.StreamReader | None = None
         self._associated: asyncio.StreamWriter | None = None # reader lifetime
 
-        # Message queues and events
+        # Queues and events
         self._failed = asyncio.Event()
         self._sending: asyncio.Queue[message.Message] = asyncio.Queue()
         self._received: asyncio.Queue[message.Message] = asyncio.Queue()
 
-        # Background tasks
+        # Tasks
         self._sender: asyncio.Task[None] | None = None
         self._receiver: asyncio.Task[None] | None = None
+        self._notifier: asyncio.Task[None] | None = None
         self._aborter = asyncio.create_task(self._abort())
-        self._notifier = asyncio.create_task(self._notifiy())
 
         # Callbacks
         self._on_fail = self.OnFail()
         self._on_receive = self.OnReceive()
-
-    async def close(self) -> None:
-        """Closes the current connection"""
-        await self.set_reader(None)
-        await self.set_writer(None)
-        self._aborter.cancel()
-
-    async def send(self, message: message.Message) -> None:
-        """Enqueues a message to be sent"""
-        await self._sending.put(message)
-
-    def on_receive(self, handler: callback.Handler[[message.Message]]):
-        """Sets the callback for received messages"""
-        self._on_receive.handler = handler
-
-    def on_fail(self, handler: callback.Handler[[]]):
-        """Sets the callback for failed operations"""
-        self._on_fail.handler = handler
 
     async def set_writer(self, writer: asyncio.StreamWriter | None) -> None:
         """Sets a new writer stream and closes the previous"""
@@ -148,8 +129,6 @@ class Connection:
             self._receiver.cancel()
             self._receiver = None
 
-        await self._received.join()
-
         # Close the previous writer associated to the reader lifetime
         if (
             self._associated is not None and
@@ -164,6 +143,41 @@ class Connection:
         # Associate a new receiver task
         if self._reader is not None:
             self._receiver = asyncio.create_task(self._receive())
+
+    async def send(self, message: message.Message) -> None:
+        """Enqueues a message to be sent"""
+        await self._sending.put(message)
+
+    async def on_receive(
+        self,
+        handler: callback.Handler[[message.Message]],
+    ) -> None:
+        """Sets the callback for received messages"""
+
+        if self._notifier is not None:
+            # Consume the queued receives
+            await self._received.join()
+
+            # Cancel the previously associated notifier task
+            self._notifier.cancel()
+            self._notifier = None
+
+        self._on_receive.handler = handler
+
+        # Associate a new notifier task
+        if self._on_receive:
+            self._notifier = asyncio.create_task(self._notifiy())
+
+    def on_fail(self, handler: callback.Handler[[]]) -> None:
+        """Sets the callback for failed operations"""
+        self._on_fail.handler = handler
+
+    async def close(self) -> None:
+        """Closes the current connection"""
+        await self.set_reader(None)
+        await self.set_writer(None)
+        await self.on_receive(None)
+        self._aborter.cancel()
 
     async def _send(self) -> None:
         """Waits in the queue for a message to be sent and consumes it"""
@@ -212,68 +226,133 @@ class Connection:
         await self.close()
 
 
-class Map(collections.abc.MutableMapping):
+class Map(collections.abc.Sized, collections.abc.Container):
     """Mapping container from uid to connection"""
 
+    OnFail = callback.Callback[[uuid.UUID]]
     OnReceive = callback.Callback[[uuid.UUID, message.Message]]
 
+    _Received = tuple[uuid.UUID, message.Message]
+
     def __init__(self) -> None:
+        # Connections
         self._connections: dict[uuid.UUID, Connection] = {}
-        self._on_receive: Map.OnReceive = callback.Callback()
 
-    async def close(self) -> None:
-        """Closes all the contained connections"""
-        uids = list(iter(self)) # Allow removing while iterating
-        await asyncio.gather(*(self.disconnect(uid) for uid in uids))
+        # Queues
+        self._received: asyncio.Queue[Map._Received] = asyncio.Queue()
 
-    async def disconnect(self, uid: uuid.UUID) -> None:
-        """Closes the connection with the uid"""
-        await self[uid].close()
-        del self[uid]
+        # Tasks
+        self._notifier: asyncio.Task[None] | None = None
+
+        # Callbacks
+        self._on_fail = self.OnFail()
+        self._on_receive = self.OnReceive()
+
+    async def set_writer(
+        self,
+        uid: uuid.UUID,
+        writer: asyncio.StreamWriter | None,
+    ) -> None:
+        """Sets the writer of the connection with the uid"""
+
+        if uid not in self:
+            await self._add(uid)
+
+        await self._connections[uid].set_writer(writer)
+
+    async def set_reader(
+        self,
+        uid: uuid.UUID,
+        reader: asyncio.StreamReader | None,
+        associated: asyncio.StreamWriter | None = None,
+    ) -> None:
+        """Sets the reader of the connection with the uid"""
+
+        if uid not in self:
+            await self._add(uid)
+
+        await self._connections[uid].set_reader(reader, associated)
 
     async def send(self, uid: uuid.UUID, message: message.Message) -> None:
         """Sends the message to the connection with the uid"""
-        await self[uid].send(message)
+        await self._connections[uid].send(message)
 
     async def broadcast(self, message: message.Message) -> None:
-        """Sends the message to all the contained connections"""
-        await asyncio.gather(*(self.send(uid, message) for uid in self))
+        """Sends the message to all the connections"""
+        await asyncio.gather(
+            *(self.send(uid, message) for uid in self._connections)
+        )
 
-    def on_receive(
+    async def on_receive(
         self,
-        handler: callback.Handler[[uuid.UUID, message.Message]]
+        handler: callback.Handler[[uuid.UUID, message.Message]],
     ) -> None:
         """Sets the callback for received messages"""
+
+        if self._notifier is not None:
+            # Consume the queued receives
+            await self._received.join()
+
+            # Cancel the previously associated notifier task
+            self._notifier.cancel()
+            self._notifier = None
+
         self._on_receive.handler = handler
 
-    def __getitem__(self, uid: uuid.UUID) -> Connection:
-        return self._connections[uid]
+        # Associate a new notifier task
+        if self._on_receive:
+            self._notifier = asyncio.create_task(self._notifiy())
 
-    def __setitem__(self, uid: uuid.UUID, connection: Connection) -> None:
+    def on_fail(self, handler: callback.Handler[[uuid.UUID]]) -> None:
+        """Sets the callback for failed operations"""
+        self._on_fail.handler = handler
+
+    async def close(self, uid: uuid.UUID) -> None:
+        """Closes the connection with the uid"""
+        await self._connections[uid].close()
+        del self._connections[uid]
+
+    async def clear(self) -> None:
+        """Closes all the connections"""
+
+        uids = list(self._connections.keys()) # Allow removing while iterating
+        await asyncio.gather(*(self.close(uid) for uid in uids))
+
+        await self.on_receive(None)
+
+    async def _add(self, uid: uuid.UUID) -> None:
+        """Add a new connection with the uuid to the map"""
+
         async def on_fail() -> None:
             if uid in self:
-                logging.warning(f"Lost connection to host '{uid}'")
-                del self[uid]
+                await self._on_fail(uid)
+                del self._connections[uid]
 
         async def on_receive(message: message.Message) -> None:
-            await self._on_receive(uid, message)
+            await self._received.put((uid, message))
 
+        connection = Connection()
         connection.on_fail(on_fail)
-        connection.on_receive(on_receive)
+        await connection.on_receive(on_receive)
 
         self._connections[uid] = connection
 
-    def __delitem__(self, uid: uuid.UUID) -> None:
-        del self._connections[uid]
+    async def _notifiy(self) -> None:
+        """Waits in the queue for a received message and consumes it"""
 
-    def __iter__(self) -> typing.Iterator[uuid.UUID]:
-        return iter(self._connections)
+        while True:
+            dequeued = await self._received.get()
+            await self._on_receive(*dequeued)
+            self._received.task_done()
 
     def __len__(self) -> int:
         return len(self._connections)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._connections
 
     async def __aenter__(self) -> "Map":
         return self
 
     async def __aexit__(self, type, value, traceback) -> None:
-        await self.close()
+        await self.clear()

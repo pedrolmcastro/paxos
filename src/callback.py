@@ -19,6 +19,9 @@ class Callback(typing.Generic[_Params]):
     def __init__(self, handler: Handler[_Params] = None) -> None:
         self.handler = handler
 
+    def __bool__(self) -> bool:
+        return self.handler is not None
+
     async def __call__(
         self,
         *args: _Params.args,

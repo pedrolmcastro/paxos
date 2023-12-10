@@ -22,8 +22,11 @@ class Data:
     hosts: list[host.Host]
 
 
+def on_fail(uid: uuid.UUID) -> None:
+    print(f"Lost connection to '{uid}'")
+
 def on_receive(uid: uuid.UUID, received: message.Message) -> None:
-    print(f"Received from: '{uid}'")
+    print(f"Received '{received}'")
 
 
 async def main() -> None:
@@ -31,7 +34,7 @@ async def main() -> None:
     data = parse()
 
     async with connection.Map() as connections:
-        connections.on_receive(on_receive)
+        connections.on_fail(on_fail)
 
         async def handshake(
             reader: asyncio.StreamReader,
@@ -40,17 +43,20 @@ async def main() -> None:
             uid = uuid.uuid4()
             print(f"Handshake with: '{uid}'")
 
-            connections[uid] = connection.Connection()
-            await connections[uid].set_reader(reader, associated = writer)
-            await connections[uid].set_writer(writer)
+            await connections.set_reader(uid, reader, associated = writer)
+            await connections.set_writer(uid, writer)
 
         await connection.connectall(data.hosts, [0.1, 1, 2, 5], handshake)
 
-        for _ in range(3):
-            for uid in connections:
-                await connections.send(uid, message.Denied(str(uid)))
+        for _ in range(2):
+            await connections.broadcast(message.Denied("Hello before!"))
 
-            await asyncio.sleep(5)
+        await asyncio.sleep(1)
+        await connections.on_receive(on_receive)
+
+        for _ in range(2):
+            await connections.broadcast(message.Denied("Hello after!"))
+            await asyncio.sleep(1)
 
 
 def parse() -> Data:
