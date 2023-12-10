@@ -117,15 +117,15 @@ class Connection:
         if self._writer is not None:
             await self._sending.join()
 
-        # Close the previous writer
-        if self._writer is not None and self._writer is not self._associated:
-            self._writer.close()
-            await self._writer.wait_closed()
-
         # Cancel the previously associated sender task
         if self._sender is not None:
             self._sender.cancel()
             self._sender = None
+
+        # Close the previous writer
+        if self._writer is not None and self._writer is not self._associated:
+            self._writer.close()
+            await self._writer.wait_closed()
 
         self._writer = writer
 
