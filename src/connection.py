@@ -113,10 +113,12 @@ class Connection:
         if self._writer is writer:
             return
 
-        # Close the previous writer
+        # Consume the queued sends
         if self._writer is not None:
             await self._sending.join()
 
+        # Close the previous writer
+        if self._writer is not None and self._writer is not self._associated:
             self._writer.close()
             await self._writer.wait_closed()
 
