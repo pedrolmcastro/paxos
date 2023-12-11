@@ -13,7 +13,7 @@ class Port:
     def __init__(self, number: int) -> None:
         if number < self.LOW or number > self.HIGH:
             raise ValueError(
-                f"Port out of range [{self.LOW}, {self.HIGH}]: '{number}'"
+                f"Port out of range [{self.LOW}, {self.HIGH}]: {number}"
             )
 
         self._number = number
@@ -21,7 +21,7 @@ class Port:
     @classmethod
     def from_str(cls, number: str) -> "Port":
         if not number.isdigit():
-            raise ValueError(f"Invalid unsigned int: '{number}'")
+            raise ValueError(f"Invalid unsigned int: {number}")
 
         return cls(int(number))
 
@@ -102,7 +102,7 @@ class Host:
                 proto = socket.IPPROTO_TCP
             )
         except socket.gaierror:
-            raise ValueError(f"Failed to get address information: '{self}'")
+            raise ValueError(f"Failed to get host address information: {self}")
 
         object.__setattr__(
             self,
@@ -115,7 +115,7 @@ class Host:
         matched = _Regex.match(hostport)
 
         if matched is None:
-            raise ValueError(f"Invalid hostport: '{hostport}'")
+            raise ValueError(f"Invalid hostport: {hostport}")
 
         host, port = matched.group(1, 2)
 
@@ -127,7 +127,7 @@ class Host:
     @classmethod
     def from_hostfile(cls, filepath: pathlib.Path) -> list["Host"]:
         if not filepath.is_file():
-            raise ValueError(f"Invalid text file: '{filepath}'")
+            raise ValueError(f"Invalid text file: {filepath}")
 
         with filepath.open() as hostfile:
             hostports = hostfile.read().strip().split()

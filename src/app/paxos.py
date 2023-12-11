@@ -125,7 +125,7 @@ class Handler:
 
         if value != self._accepting[proposal].value:
             del self._accepting[proposal]
-            raise ValueError("Received different values with same proposal")
+            raise ValueError(f"Duplicate proposal number: {proposal}")
 
         self._accepting[proposal].accepts += 1
 

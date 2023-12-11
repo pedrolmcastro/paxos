@@ -155,7 +155,7 @@ class Type(enum.Enum):
             case self.WROTE:
                 return Wrote
 
-        raise ValueError(f"Unknown message type: '{self}'")
+        raise ValueError(f"Unknown message type: {self}")
 
 
 @dataclasses.dataclass(frozen = True)

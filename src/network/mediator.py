@@ -69,6 +69,8 @@ class Mediator:
     async def send(self, uid: uuid.UUID, message: message.Message) -> None:
         """Sends the message to the client or server with the uid"""
 
+        logging.debug(f"Sending to [{uid}]: {message}")
+
         if uid in self._servers:
             await self._servers.send(uid, message)
         else:
@@ -127,7 +129,7 @@ class Mediator:
         async def fail(writer: asyncio.StreamWriter, reason: str) -> None:
             writer.close()
             await writer.wait_closed()
-            logging.warning(f"Failed greeting: {reason}")
+            logging.warning(f"Greeting failed: {reason}")
 
         try:
             received = await message.receive(reader)
@@ -156,7 +158,7 @@ class Mediator:
 
                 uid = uuid.UUID(int = received.uid)
                 await self._servers.set_reader(uid, reader, writer)
-                logging.debug(f"Successfull server greeting: '{uid}'")
+                logging.debug(f"Successfull greeting with server: [{uid}]")
 
             case message.Client():
                 try:
@@ -167,7 +169,7 @@ class Mediator:
                 uid = uuid.uuid4()
                 await self._clients.set_writer(uid, writer)
                 await self._clients.set_reader(uid, reader, writer)
-                logging.debug(f"Successfull client greeting: '{uid}'")
+                logging.debug(f"Successfull greeting with client: [{uid}]")
 
             case _:
                 reason = f"Unexpected greeting message: '{type(received)}'"
@@ -184,7 +186,7 @@ class Mediator:
     ) -> None:
         """Callback for received messages"""
 
-        logging.debug(f"Message from '{sender}': {received}")
+        logging.debug(f"Received from [{sender}]: {received}")
 
         if (
             isinstance(received, security.Authenticated) and
@@ -193,7 +195,7 @@ class Mediator:
             await self.send(sender, message.Denied(
                 reason = "Authentication failed"
             ))
-            return logging.warning(f"Message authentication failed: {received}")
+            return logging.warning("Message authentication failed")
 
         try:
             await self._on_receive(sender, received)
@@ -212,11 +214,11 @@ class Mediator:
     @staticmethod
     def _on_client_fail(uid: uuid.UUID) -> None:
         """Callback for client connection lost"""
-        logging.warning(f"Lost connection to client: '{uid}'")
+        logging.warning(f"Lost connection to client: [{uid}]")
 
     def _on_server_fail(self, uid: uuid.UUID) -> None:
         """Callback for server connection lost"""
-        logging.warning(f"Lost connection to server: '{uid}'")
+        logging.warning(f"Lost connection to server: [{uid}]")
 
         if len(self._servers) < self._majority:
             error.exit("Lost connection to the majority of servers")

@@ -50,7 +50,7 @@ def _encode(value: typing.Any) -> bytes:
         case bytes():
             return value
 
-    raise ValueError(f"Unable to encode type: '{type(value)}'")
+    raise ValueError(f"Unable to encode type: {type(value)}")
 
 def hash(authenticated: Authenticated) -> str:
     items = dataclasses.asdict(authenticated).items()

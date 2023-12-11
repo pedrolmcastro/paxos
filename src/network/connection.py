@@ -45,7 +45,7 @@ async def connect(
             fails += 1
             await on_fail(exception, host, fails)
 
-    raise ConnectionError(f"Failed to connect to '{host}'")
+    raise ConnectionError(f"Failed to connect to {host}")
 
 async def connectall(
     hosts: collections.abc.Iterable[host.Host],
