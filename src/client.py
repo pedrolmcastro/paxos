@@ -57,11 +57,11 @@ async def main() -> None:
             if inputed == "quit":
                 break
 
-            if ' ' not in inputed:
+            if len(splited := inputed.split()) < 2:
                 logging.error("Missing command parameter")
                 continue
 
-            command, parameter, *_ = inputed.split()
+            command, parameter, *_ = splited
 
             match command:
                 case "write":
