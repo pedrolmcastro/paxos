@@ -182,7 +182,7 @@ class Mediator:
     ) -> None:
         """Callback for received messages"""
 
-        logging.debug(f"Received message from '{sender}: {received}'")
+        logging.debug(f"Message from '{sender}': {received}")
 
         if (
             isinstance(received, security.Authenticated) and

@@ -9,61 +9,69 @@ import security
 
 
 @dataclasses.dataclass(frozen = True)
-class Accept(security.Authenticated):
+class _Base:
+    def __str__(self) -> str:
+        items = dataclasses.asdict(self).items()
+        values = (str(value) for field, value in items if field != "hash")
+        return f"{self.__class__.__name__}({', '.join(values)})"
+
+
+@dataclasses.dataclass(frozen = True)
+class Accept(_Base, security.Authenticated):
     value: str
     proposal: int
 
 @dataclasses.dataclass(frozen = True)
-class Accepted(security.Authenticated):
+class Accepted(_Base, security.Authenticated):
     value: str
     proposal: int
 
 @dataclasses.dataclass(frozen = True)
-class Acknowledge:
+class Acknowledge(_Base):
     pass
 
 @dataclasses.dataclass(frozen = True)
-class Client:
+class Client(_Base):
     pass
 
 @dataclasses.dataclass(frozen = True)
-class Denied:
+class Denied(_Base):
     reason: str
 
 @dataclasses.dataclass(frozen = True)
-class Found(security.Authenticated):
+class Found(_Base, security.Authenticated):
     value: str
     found: bool
 
 @dataclasses.dataclass(frozen = True)
-class Learn:
+class Learn(_Base):
     value: str
 
 @dataclasses.dataclass(frozen = True)
-class Prepare(security.Authenticated):
+class Prepare(_Base, security.Authenticated):
     proposal: int
 
 @dataclasses.dataclass(frozen = True)
-class Promise(security.Authenticated):
+class Promise(_Base, security.Authenticated):
     proposal: int
     accepted: str
     previous: int | None
 
 @dataclasses.dataclass(frozen = True)
-class Search:
+class Search(_Base):
     value: str
     recurse: bool
 
 @dataclasses.dataclass(frozen = True)
-class Server(security.Authenticated):
+class Server(_Base, security.Authenticated):
     uid: int
 
 @dataclasses.dataclass(frozen = True)
-class Write:
+class Write(_Base):
     value: str
 
 @dataclasses.dataclass(frozen = True)
-class Wrote:
+class Wrote(_Base):
     value: str
 
 

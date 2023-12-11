@@ -16,14 +16,15 @@ class Storage(collections.abc.Set):
         if self._filepath.is_file():
             with self._filepath.open() as file:
                 for line in file:
-                    self._values.add(line)
+                    if striped := line.strip():
+                        self._values.add(striped)
 
     def add(self, value: str) -> None:
         """Adds the value to the permanent storage"""
 
         if value not in self:
             with self._filepath.open("a") as file:
-                file.write(f"value\n")
+                file.write(f"{value}\n")
 
             self._values.add(value)
 

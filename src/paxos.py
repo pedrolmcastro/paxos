@@ -89,7 +89,7 @@ class Handler:
             case message.Search():
                 await self._on_search(sender, received.value, received.recurse)
             case message.Write():
-                pass # TODO
+                await self._on_write(sender, received.value)
             case message.Acknowledge() | message.Denied():
                 pass
             case _:
@@ -103,7 +103,7 @@ class Handler:
     ) -> None:
         """Handles an 'Accept' message"""
 
-        if self._promised is None or proposal > self._promised:
+        if self._promised is None or proposal >= self._promised:
             self._promised = proposal
             self._accepted = _Accepted(value = value, proposal = proposal)
 
@@ -146,8 +146,10 @@ class Handler:
 
             for searcher in searchers:
                 await self._mediator.send(searcher, response)
-        else:
-            self._searching[value].fails += 1
+
+            return
+
+        self._searching[value].fails += 1
 
         if self._searching[value].fails >= self._mediator.majority:
             del self._searching[value]
