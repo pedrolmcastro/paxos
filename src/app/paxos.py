@@ -5,10 +5,11 @@ import asyncio
 import collections
 import dataclasses
 
-import message
-import storage
-import mediator
-import security
+from network import message
+from network import mediator
+
+from app import storage
+from app import security
 
 
 @dataclasses.dataclass

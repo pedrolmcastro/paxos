@@ -1,8 +1,9 @@
 import pathlib
 import argparse
 
-import host
-import singleton
+from util import singleton
+
+from network import host
 
 
 class Parser(metaclass = singleton.Singleton):

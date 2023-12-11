@@ -5,7 +5,7 @@ import typing
 import asyncio
 import dataclasses
 
-import security
+from app import security
 
 
 @dataclasses.dataclass(frozen = True)

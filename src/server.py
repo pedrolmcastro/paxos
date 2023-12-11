@@ -1,14 +1,18 @@
+#! /bin/python3.10
+
 import asyncio
 import logging
 import pathlib
 
-import cli
-import host
-import error
-import paxos
-import storage
-import mediator
-import security
+from util import error
+
+from network import host
+from network import mediator
+
+from app import cli
+from app import paxos
+from app import storage
+from app import security
 
 
 async def main() -> None:

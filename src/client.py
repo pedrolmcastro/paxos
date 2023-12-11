@@ -1,13 +1,16 @@
 import asyncio
-import logging
+#! /bin/python3.10
 
+import logging
 import aioconsole # type: ignore
 
-import cli
-import host
-import error
-import message
-import connection
+from util import error
+
+from network import host
+from network import message
+from network import connection
+
+from app import cli
 
 
 async def handshake(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):

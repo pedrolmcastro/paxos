@@ -3,9 +3,10 @@ import typing
 import asyncio
 import collections.abc
 
-import host
-import message
-import callback
+from util import callback
+
+from network import host
+from network import message
 
 
 Delays = collections.abc.Iterable[float]

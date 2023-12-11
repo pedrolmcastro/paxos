@@ -4,8 +4,8 @@ import typing
 import hashlib
 import dataclasses
 
-import error
-import singleton
+from util import error
+from util import singleton
 
 
 class Context(metaclass = singleton.Singleton):

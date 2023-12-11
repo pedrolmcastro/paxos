@@ -3,12 +3,14 @@ import asyncio
 import logging
 import collections.abc
 
-import host
-import error
-import message
-import callback
-import security
-import connection
+from util import error
+from util import callback
+
+from network import host
+from network import message
+from network import connection
+
+from app import security
 
 
 class Mediator:
