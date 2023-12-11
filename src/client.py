@@ -1,6 +1,6 @@
-import asyncio
 #! /bin/python3.10
 
+import asyncio
 import logging
 import aioconsole # type: ignore
 
@@ -18,7 +18,7 @@ async def handshake(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     received = await message.receive(reader)
 
     if not isinstance(received, message.Acknowledge):
-        raise ValueError(f"Handskahe with the server failed")
+        raise ValueError(f"Handskahe failed")
 
 def on_connect_fail(exception: Exception, host: host.Host, fails: int) -> None:
     logging.error(f"Failed to connect to server: {fails} time(s)")
