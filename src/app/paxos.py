@@ -260,6 +260,11 @@ class Handler:
     async def _on_write(self, sender: uuid.UUID, value: str) -> None:
         """Handles a 'Write' message"""
 
+        if any(space in value for space in (' ', '\t', '\r', '\n')):
+            return await self._mediator.send(sender, message.Denied(
+                reason = "Stored values can not contain white spaces"
+            ))
+
         await self._mediator.send(sender, message.Acknowledge())
         self._writing.append(_Writing(value = value, writer = sender))
 
