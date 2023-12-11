@@ -76,8 +76,9 @@ class Mediator:
         else:
             await self._clients.send(uid, message)
 
-    async def broadcast(self, message: message.Message) -> None:
+    async def quorum(self, message: message.Message) -> None:
         """Sends the message to all the connected servers"""
+        logging.debug(f"Sending to Quorum: {message}")
         await self._servers.broadcast(message)
 
     async def done(self) -> None:

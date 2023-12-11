@@ -108,7 +108,7 @@ class Handler:
             self._promised = proposal
             self._accepted = _Accepted(value = value, proposal = proposal)
 
-            await self._mediator.broadcast(message.Accepted(
+            await self._mediator.quorum(message.Accepted(
                 value = value,
                 proposal = proposal,
             ))
@@ -131,7 +131,7 @@ class Handler:
 
         if self._accepting[proposal].accepts >= self._mediator.majority:
             del self._accepting[proposal]
-            await self._mediator.broadcast(message.Learn(value = value))
+            await self._mediator.quorum(message.Learn(value = value))
 
     async def _on_found(self, value: str, found: bool) -> None:
         """Handles a 'Found' message"""
@@ -224,7 +224,7 @@ class Handler:
                 self._proposer.cancel()
                 self._proposer = None
 
-            await self._mediator.broadcast(message.Accept(
+            await self._mediator.quorum(message.Accept(
                 value = value,
                 proposal = proposal,
             ))
@@ -247,7 +247,7 @@ class Handler:
             await self._mediator.send(sender, message.Acknowledge())
 
             if started:
-                await self._mediator.broadcast(message.Search(
+                await self._mediator.quorum(message.Search(
                     value = value,
                     recurse = False,
                 ))
@@ -293,7 +293,7 @@ class Handler:
                 proposal = self._proposal()
             )
 
-            await self._mediator.broadcast(message.Prepare(
+            await self._mediator.quorum(message.Prepare(
                 proposal = self._proposing.proposal
             ))
 
