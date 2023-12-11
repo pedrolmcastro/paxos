@@ -43,3 +43,23 @@ class Parser(metaclass = singleton.Singleton):
             type = host.Host.from_hostport,
             help = "Host in format IPV4:PORT or [IPV6]:PORT or HOSTNAME:PORT",
         )
+
+        # Alternative client parser
+
+        self.duplicated = argparse.ArgumentParser()
+
+        self.duplicated.add_argument(
+            "-f",
+            "--first",
+            required = True,
+            type = host.Host.from_hostport,
+            help = "Host in format IPV4:PORT or [IPV6]:PORT or HOSTNAME:PORT"
+        )
+
+        self.duplicated.add_argument(
+            "-s",
+            "--second",
+            required = True,
+            type = host.Host.from_hostport,
+            help = "Host in format IPV4:PORT or [IPV6]:PORT or HOSTNAME:PORT"
+        )
