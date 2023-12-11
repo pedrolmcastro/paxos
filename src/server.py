@@ -1,4 +1,3 @@
-import uuid
 import asyncio
 import logging
 import pathlib
@@ -6,6 +5,7 @@ import pathlib
 import cli
 import host
 import error
+import paxos
 import storage
 import mediator
 import security
@@ -25,17 +25,20 @@ async def main() -> None:
     logging.debug(f"Hosts: [{', '.join(map(str, hosts))}]")
 
     try:
-        store = storage.Storage(pathlib.Path(f"storage/{parsed.port}.txt"))
+        store = storage.Storage(pathlib.Path(f"{parsed.port}.txt"))
     except Exception as exception:
         error.exit(f"Failed to open storage: {exception}")
 
-    security.Context()
-
-    uid = uuid.uuid4()
+    uid = security.Context().uid
     logging.debug(f"Generated UID: {uid}")
 
-    async with mediator.Mediator(uid, store, hosts) as server:
-        await server.start(parsed.port, [0.1, 1.0, 2.0, 5.0])
+    secret = security.Context().secret
+    logging.debug(f"Detected secret: {'*' * len(secret)}")
+
+    async with mediator.Mediator(hosts) as server:
+        handler = paxos.Handler(store, server, (2.0, 5.0))
+
+        await server.start(parsed.port, [0.1, 1.0, 2.0, 5.0], handler.handle)
         await server.done()
 
 
@@ -44,5 +47,3 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
-    finally:
-        logging.info("Server closed")

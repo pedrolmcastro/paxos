@@ -52,7 +52,7 @@ class Promise(security.Authenticated):
 @dataclasses.dataclass(frozen = True)
 class Search:
     value: str
-    recursive: bool
+    recurse: bool
 
 @dataclasses.dataclass(frozen = True)
 class Server(security.Authenticated):
@@ -62,10 +62,14 @@ class Server(security.Authenticated):
 class Write:
     value: str
 
+@dataclasses.dataclass(frozen = True)
+class Wrote:
+    value: str
+
 
 Message = (
     Accept | Accepted | Acknowledge | Client | Denied | Found | Learn |
-    Prepare | Promise | Search | Server | Write
+    Prepare | Promise | Search | Server | Write | Wrote
 )
 
 
@@ -82,6 +86,7 @@ class Type(enum.Enum):
     SEARCH      = enum.auto()
     SERVER      = enum.auto()
     WRITE       = enum.auto()
+    WROTE       = enum.auto()
 
     @classmethod
     def from_message(cls, message: Message) -> "Type":
@@ -110,6 +115,8 @@ class Type(enum.Enum):
                 return cls.SERVER
             case Write():
                 return cls.WRITE
+            case Wrote():
+                return cls.WROTE
 
     def to_type(self) -> type[Message]:
         match self:
@@ -137,6 +144,8 @@ class Type(enum.Enum):
                 return Server
             case self.WRITE:
                 return Write
+            case self.WROTE:
+                return Wrote
 
         raise ValueError(f"Unknown message type: '{self}'")
 

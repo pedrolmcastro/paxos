@@ -1,4 +1,5 @@
 import os
+import uuid
 import typing
 import hashlib
 import dataclasses
@@ -18,6 +19,11 @@ class Context(metaclass = singleton.Singleton):
             error.exit(f"Missing environment variable: '{self._VARIABLE}'")
 
         self._secret = secret
+        self._uid = uuid.uuid4()
+
+    @property
+    def uid(self) -> uuid.UUID:
+        return self._uid
 
     @property
     def secret(self) -> str:

@@ -1,44 +1,66 @@
+import time
 import uuid
+import random
+import asyncio
+import collections
 import dataclasses
 
 import message
 import storage
 import mediator
+import security
 
 
 @dataclasses.dataclass
 class _Accepted:
     value: str
-    proposal: int | None
+    proposal: int
 
 @dataclasses.dataclass
 class _Accepting:
     value: str
-    received: int
+    accepts: int
+
+@dataclasses.dataclass
+class _Proposing:
+    value: str
+    proposal: int
+    promises: int
+    maximum: int | None
 
 @dataclasses.dataclass
 class _Searching:
     fails: int
     searchers: list[uuid.UUID]
 
+@dataclasses.dataclass
+class _Writing:
+    value: str
+    writer: uuid.UUID
+
 
 class Handler:
     def __init__(
         self,
-        majority: int,
         storage: storage.Storage,
         mediator: mediator.Mediator,
+        delays: tuple[float, float],
     ) -> None:
-        # Dependencies
+        # Configuration
+        self._delays = delays
         self._storage = storage
         self._mediator = mediator
 
-        # Internal state
-        self._majority = majority
+        # State
         self._promised: int | None = None
+        self._accepted: _Accepted | None = None
+        self._proposing: _Proposing | None = None
         self._accepting: dict[int, _Accepting] = {}
         self._searching: dict[str, _Searching] = {}
-        self._accepted = _Accepted(value = "", proposal = None)
+        self._writing: collections.deque[_Writing] = collections.deque()
+
+        # Tasks
+        self._proposer: asyncio.Task[None] | None = None
 
     async def handle(
         self,
@@ -52,16 +74,26 @@ class Handler:
                 await self._on_accept(sender, received.value, received.proposal)
             case message.Accepted():
                 await self._on_accepted(received.value, received.proposal)
-            case message.Acknowledge():
-                pass
             case message.Found():
                 await self._on_found(received.value, received.found)
             case message.Learn():
-                self._on_learn(received.value)
+                await self._on_learn(received.value)
             case message.Prepare():
                 await self._on_prepare(sender, received.proposal)
+            case message.Promise():
+                await self._on_promise(
+                    received.proposal,
+                    received.accepted,
+                    received.previous
+                )
             case message.Search():
-                await self._on_search(sender, received.value, received.recursive)
+                await self._on_search(sender, received.value, received.recurse)
+            case message.Write():
+                pass # TODO
+            case message.Acknowledge() | message.Denied():
+                pass
+            case _:
+                raise ValueError(f"Unexpected message type: {type(received)}")
 
     async def _on_accept(
         self,
@@ -73,12 +105,11 @@ class Handler:
 
         if self._promised is None or proposal > self._promised:
             self._promised = proposal
-            self._accepted.value = value
-            self._accepted.proposal = proposal
+            self._accepted = _Accepted(value = value, proposal = proposal)
 
             await self._mediator.broadcast(message.Accepted(
-                value = self._accepted.value,
-                proposal = self._accepted.proposal,
+                value = value,
+                proposal = proposal,
             ))
         else:
             await self._mediator.send(sender, message.Denied(
@@ -95,11 +126,11 @@ class Handler:
             del self._accepting[proposal]
             raise ValueError("Received different values with same proposal")
 
-        self._accepting[proposal].received += 1
+        self._accepting[proposal].accepts += 1
 
-        if self._accepting[proposal].received >= self._majority:
-            await self._mediator.broadcast(message.Learn(value = value))
+        if self._accepting[proposal].accepts >= self._mediator.majority:
             del self._accepting[proposal]
+            await self._mediator.broadcast(message.Learn(value = value))
 
     async def _on_found(self, value: str, found: bool) -> None:
         """Handles a 'Found' message"""
@@ -118,17 +149,26 @@ class Handler:
         else:
             self._searching[value].fails += 1
 
-        if self._searching[value].fails >= self._majority:
+        if self._searching[value].fails >= self._mediator.majority:
             del self._searching[value]
             response = message.Found(value = value, found = False)
 
             for searcher in searchers:
                 await self._mediator.send(searcher, response)
 
-    def _on_learn(self, value: str) -> None:
+    async def _on_learn(self, value: str) -> None:
         """Handles a 'Learn' message"""
+
         self._storage.add(value)
-        # TODO: pending writes
+
+        while self._writing and self._writing[0].value in self._storage:
+            dequeued = self._writing.popleft()
+
+            await self._mediator.send(dequeued.writer, message.Wrote(
+                value = dequeued.value
+            ))
+
+        self._reset()
 
     async def _on_prepare(self, sender: uuid.UUID, proposal: int) -> None:
         """Handles a 'Prepare' message"""
@@ -136,25 +176,65 @@ class Handler:
         if self._promised is None or proposal > self._promised:
             self._promised = proposal
 
+            if self._accepted is None:
+                accepted = ""
+                previous = None
+            else:
+                accepted = self._accepted.value
+                previous = self._accepted.proposal
+
             await self._mediator.send(sender, message.Promise(
                 proposal = self._promised,
-                accepted = self._accepted.value,
-                previous = self._accepted.proposal,
+                accepted = accepted,
+                previous = previous,
             ))
         else:
             await self._mediator.send(sender, message.Denied(
                 reason = "Already promised to a higher proposal"
             ))
 
+    async def _on_promise(
+        self,
+        proposal: int,
+        accepted: str,
+        previous: int | None
+    ) -> None:
+        """Handles a 'Promise' message"""
+
+        if self._proposing is None or proposal != self._proposing.proposal:
+            return
+
+        if previous is not None and(
+            self._proposing.maximum is None or
+            previous > self._proposing.maximum
+        ):
+            self._proposing.value = accepted
+
+        self._proposing.promises += 1
+
+        if self._proposing.promises >= self._mediator.majority:
+            value = self._proposing.value
+            self._proposing = None
+
+            # Stop proposing for this round
+            if self._proposer is not None:
+                self._proposer.cancel()
+                self._proposer = None
+
+            await self._mediator.broadcast(message.Accept(
+                value = value,
+                proposal = proposal,
+            ))
+
     async def _on_search(
         self,
         sender: uuid.UUID,
         value: str,
-        recursive: bool,
+        recurse: bool,
     ) -> None:
         """Handles a 'Search' message"""
 
-        if recursive:
+        if recurse:
             if value not in self._searching:
                 self._searching[value] = _Searching(fails = 0, searchers = [])
 
@@ -166,10 +246,64 @@ class Handler:
             if started:
                 await self._mediator.broadcast(message.Search(
                     value = value,
-                    recursive = False,
+                    recurse = False,
                 ))
         else:
             await self._mediator.send(sender, message.Found(
                 value = value,
                 found = value in self._storage,
             ))
+
+    async def _on_write(self, sender: uuid.UUID, value: str) -> None:
+        """Handles a 'Write' message"""
+
+        await self._mediator.send(sender, message.Acknowledge())
+        self._writing.append(_Writing(value = value, writer = sender))
+
+        # Start the task to propose the value
+        if self._proposer is None:
+            value = self._writing[0].value
+            self._proposer = asyncio.create_task(self._propose(value))
+
+    @staticmethod
+    def _proposal() -> int:
+        """Returns a new proposal number"""
+
+        now = int(time.time() * 1000).to_bytes(8, byteorder = "big")
+        uid = security.Context().uid.bytes[:8]
+
+        return int.from_bytes(now + uid, byteorder = "big")
+
+    async def _propose(self, value: str) -> None:
+        """Repeatedly sends 'Prepare' messages until canceled"""
+
+        while True:
+            self._proposing = _Proposing(
+                promises = 0,
+                value = value,
+                maximum = None,
+                proposal = self._proposal()
+            )
+
+            await self._mediator.broadcast(message.Prepare(
+                proposal = self._proposing.proposal
+            ))
+
+            delay = random.uniform(self._delays[0], self._delays[1])
+            await asyncio.sleep(delay)
+
+    def _reset(self) -> None:
+        """Resets the internal state to go to the next round"""
+
+        self._promised = None
+        self._accepted = None
+        self._proposing = None
+        self._accepting.clear()
+
+        if self._proposer is not None:
+            self._proposer.cancel()
+            self._proposer = None
+
+        if self._writing:
+            value = self._writing[0].value
+            self._proposer = asyncio.create_task(self._propose(value))
